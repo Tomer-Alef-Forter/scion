@@ -76,10 +76,14 @@ export function Dashboard({
 	function statusFor(workspaceId: string): {
 		label: AgentStatus | "starting" | "done";
 	} {
-		const bindings = status.listByWorkspace(workspaceId);
-		if (bindings[0]) return { label: bindings[0].status };
+		// A binding row can outlive its process (killAll() kills the PTY but the
+		// app exits before node-pty's async onExit — which calls
+		// status.markExited — has a chance to fire), so a dead workspace must
+		// always report "done", never a stale status from that leftover row.
 		const live = ptyListSessions(workspaceId).some((s) => !s.exited);
-		return { label: live ? "starting" : "done" };
+		if (!live) return { label: "done" };
+		const bindings = status.listByWorkspace(workspaceId);
+		return { label: bindings[0]?.status ?? "starting" };
 	}
 
 	function liveTerminal(workspaceId: string): string | undefined {
@@ -103,7 +107,20 @@ export function Dashboard({
 				status.markSeen(selected.id);
 				requestExit({ type: "attach", terminalId, projectId });
 			} else {
-				setMessage("No running agent to attach (session ended).");
+				// No live terminal (the app was restarted, or the agent exited) —
+				// launch a fresh one in the SAME worktree rather than dead-ending.
+				// Resumes the prior Claude conversation if a session_id was
+				// captured from the hook.
+				setBusy(true);
+				setMessage("Resuming…");
+				store
+					.resumeWorkspace({ workspaceId: selected.id })
+					.then(({ terminalId: newTerminalId }) => {
+						status.markSeen(selected.id);
+						requestExit({ type: "attach", terminalId: newTerminalId, projectId });
+					})
+					.catch((e) => setMessage(`Resume failed: ${e instanceof Error ? e.message : e}`))
+					.finally(() => setBusy(false));
 			}
 			return;
 		}

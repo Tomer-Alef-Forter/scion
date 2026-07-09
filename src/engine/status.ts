@@ -77,6 +77,7 @@ export interface StatusStore {
 		lastEventType: AgentLifecycleEventType;
 		lastEventAt: number;
 		status: AgentStatus;
+		agentSessionId: string | null;
 	}>;
 }
 
@@ -164,6 +165,7 @@ export function createStatusStore(db: Db): StatusStore {
 					r.lastEventAt,
 					seen,
 				),
+				agentSessionId: r.agentSessionId,
 			}));
 		},
 	};

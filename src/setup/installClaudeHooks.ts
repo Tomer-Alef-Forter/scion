@@ -2,7 +2,7 @@
 // Adapted from superset apps/desktop/.../agent-wrappers-claude-codex-opencode.ts
 // (getClaudeManagedHookCommand + getClaudeGlobalSettingsJsonContent +
 // createClaudeSettingsJson). Merges into ~/.claude/settings.json without
-// clobbering user hooks, and writes ~/.superset-local/hooks/notify.sh.
+// clobbering user hooks, and writes ~/.scion/hooks/notify.sh.
 import {
 	chmodSync,
 	copyFileSync,

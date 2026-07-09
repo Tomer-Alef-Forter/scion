@@ -34,17 +34,41 @@ export interface LaunchResult {
 	terminalId: string;
 }
 
-/** Launch `claude --dangerously-skip-permissions [prompt]` in the worktree. */
+/**
+ * Builds the argv for launching claude. Exported (pure, no spawn) so its
+ * behavior — notably `--resume <id>` — is unit-testable without spawning the
+ * real binary.
+ */
+export function buildClaudeArgv(args: {
+	prompt?: string;
+	resumeSessionId?: string | null;
+}): string[] {
+	const prompt = args.prompt ? sanitizePrompt(args.prompt).trim() : "";
+	const resumeArgs = args.resumeSessionId
+		? ["--resume", args.resumeSessionId]
+		: [];
+	return prompt
+		? [...CLAUDE_ARGS, ...resumeArgs, prompt]
+		: [...CLAUDE_ARGS, ...resumeArgs];
+}
+
+/**
+ * Launch `claude --dangerously-skip-permissions [prompt]` in the worktree.
+ * When `resumeSessionId` is set (a prior Claude session_id captured from the
+ * lifecycle hook — see engine/status.ts `agentSessionId`), resumes that
+ * conversation with `--resume <id>` instead of starting a fresh one — used
+ * when reconnecting to a workspace whose terminal has ended.
+ */
 export function launchClaude(args: {
 	workspaceId: string;
 	worktreePath: string;
 	prompt?: string;
+	resumeSessionId?: string | null;
 	cols?: number;
 	rows?: number;
 }): LaunchResult {
 	const terminalId = randomUUID();
-	const prompt = args.prompt ? sanitizePrompt(args.prompt).trim() : "";
-	const argv = prompt ? [...CLAUDE_ARGS, prompt] : [...CLAUDE_ARGS];
+	const argv = buildClaudeArgv(args);
 
 	spawnSession({
 		id: terminalId,

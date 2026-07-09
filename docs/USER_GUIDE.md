@@ -1,4 +1,4 @@
-# superset-local — User Guide
+# Scion — User Guide
 
 A tiny terminal UI for running **multiple Claude Code agents in parallel**, each
 on its own git branch inside an isolated worktree. Think of it as a little
@@ -7,14 +7,18 @@ merge — all without ever touching your main checkout.
 
 It's a stripped-down, local-only clone of [Superset](https://superset.sh): no
 Docker, Postgres, cloud account, or auth. Everything lives under
-`~/.superset-local/`.
+`~/.scion/`.
+
+There's also a browser-based [Web Guide](./WEB_GUIDE.md) — same engine,
+same underlying state, a second front end with live terminals, a diff viewer,
+and a file browser.
 
 ---
 
 ## 1. What it gives you
 
 - **Parallel agents, zero collisions.** Every task runs in a separate git
-  worktree on its own branch (`~/.superset-local/worktrees/<projectId>/<branch>`),
+  worktree on its own branch (`~/.scion/worktrees/<projectId>/<branch>`),
   so five agents can edit "the same repo" at once without stepping on each other
   or on your working tree.
 - **A live status dashboard.** See at a glance which agents are working, which
@@ -23,7 +27,7 @@ Docker, Postgres, cloud account, or auth. Everything lives under
   then detach and leave it running.
 - **Review before you keep anything.** Diff a worktree against its base branch,
   then merge it back into your main checkout — or throw it away.
-- **Nothing hidden.** All state is a single SQLite file (`~/.superset-local/host.db`)
+- **Nothing hidden.** All state is a single SQLite file (`~/.scion/host.db`)
   and plain worktrees on disk.
 
 ---
@@ -50,7 +54,7 @@ bun start             # runs `tsx src/index.tsx` under Node
 
 On **first run** it sets up status reporting automatically:
 
-- Writes `~/.superset-local/hooks/notify.sh`
+- Writes `~/.scion/hooks/notify.sh`
 - Merges Claude Code lifecycle hooks into `~/.claude/settings.json`
   (**merged, not clobbered** — your existing hooks are preserved)
 
@@ -105,7 +109,7 @@ uncommitted files if any. It refreshes on a slow tick.
 
 ### 4.3 New workspace
 
-Type a plain-English task. superset-local then:
+Type a plain-English task. Scion then:
 
 1. Generates a branch name from your task (e.g. `my-new-feature-a8f3`),
    deduplicating if it collides.
@@ -184,10 +188,10 @@ repo checkout**:
 
 | Path                                   | What it is                              |
 |----------------------------------------|-----------------------------------------|
-| `~/.superset-local/host.db`            | SQLite: projects, workspaces, bindings  |
-| `~/.superset-local/worktrees/<proj>/`  | One worktree per workspace              |
-| `~/.superset-local/hooks/notify.sh`    | Status-reporting hook                    |
-| `~/.superset-local/.installed`         | First-run marker (timestamp)            |
+| `~/.scion/host.db`                     | SQLite: projects, workspaces, bindings  |
+| `~/.scion/worktrees/<proj>/`           | One worktree per workspace              |
+| `~/.scion/hooks/notify.sh`             | Status-reporting hook                    |
+| `~/.scion/.installed`                  | First-run marker (timestamp)            |
 | `~/.claude/settings.json`              | Where the lifecycle hooks are merged in |
 
 ---
@@ -206,7 +210,7 @@ repo checkout**:
 ## 11. Troubleshooting
 
 - **Dashboard shows `starting` forever / no live status.** The Claude hooks
-  aren't firing. Confirm `~/.superset-local/hooks/notify.sh` exists and is
+  aren't firing. Confirm `~/.scion/hooks/notify.sh` exists and is
   executable, and that `~/.claude/settings.json` contains a hook command
   referencing `hooks/notify.sh`. Re-run `bun start` to reinstall them.
 - **"No running agent to attach (session ended)."** The PTY is gone — usually

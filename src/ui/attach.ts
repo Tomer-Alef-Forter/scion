@@ -3,7 +3,7 @@
 import { getSession } from "../engine/pty.ts";
 
 const DETACH_HINT =
-	"\r\n\x1b[2m[superset-local] attached — press Ctrl-b then d to detach]\x1b[0m\r\n";
+	"\r\n\x1b[2m[scion] attached — press Ctrl-b then d to detach]\x1b[0m\r\n";
 
 export function runAttach(terminalId: string): Promise<void> {
 	const session = getSession(terminalId);

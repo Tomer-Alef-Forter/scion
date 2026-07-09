@@ -1,6 +1,6 @@
 // Drive the real TUI inside a PTY, feed keystrokes, capture output — so we can
 // reproduce interactive errors headlessly. Uses an isolated HOME + a throwaway
-// git repo so the real ~/.claude / ~/.superset-local are untouched.
+// git repo so the real ~/.claude / ~/.scion are untouched.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -1,12 +1,21 @@
-# superset-local
+<img src="assets/scion-logo.svg" alt="" width="64" height="64" />
 
-A tiny, standalone terminal UI for orchestrating **Claude Code** agents across
+# Scion
+
+A tiny, standalone tool for orchestrating **Claude Code** agents across
 isolated git worktrees — a stripped-down, local-only clone of
 [Superset](https://superset.sh). No Docker, Postgres, Electric, Caddy, auth, or
-cloud account. Everything lives under `~/.superset-local/`.
+cloud account. Everything lives under `~/.scion/`.
+
+Two front ends over the same engine:
+- A **terminal UI** (`bun start`) — see the [User Guide](docs/USER_GUIDE.md).
+- A **web UI** (`bun run web:dev`) — live terminals, a status dashboard, diffs,
+  and a file browser in the browser. See the [Web Guide](docs/WEB_GUIDE.md).
 
 It reuses logic copied from Superset (`packages/host-service`, `packages/shared`,
-the Claude-hook status scheme) but has **no dependency on the Superset monorepo**.
+the Claude-hook status scheme, and — for the web UI — its web terminal client,
+theme, diff viewer, and status indicator) but has **no dependency on the
+Superset monorepo**. See [NOTICE.md](NOTICE.md) for attribution.
 
 ## Requirements
 
@@ -24,25 +33,31 @@ the Claude-hook status scheme) but has **no dependency on the Superset monorepo*
 ```bash
 bun install           # or: npm install
 bun run db:generate   # once, to produce the SQLite migrations
-bun start             # runs `tsx src/index.tsx` (Node runtime)
 ```
 
-First run installs Claude Code lifecycle hooks into `~/.claude/settings.json`
-(merged, not clobbered) and writes `~/.superset-local/hooks/notify.sh`, so the
-dashboard can show live agent status.
+Then pick a front end:
 
-## Usage
+```bash
+bun start             # terminal UI — runs `tsx src/index.tsx` (Node runtime)
 
-- **Projects**: `a` add a git repo, `enter` open, `x` remove, `q` quit.
-- **Dashboard**: `n` new workspace (creates a worktree + branch and launches
-  `claude` with your task prompt), `enter` attach to the agent's terminal
-  (`Ctrl-b d` to detach), `d` diff vs base, `m` merge branch back into base,
-  `o` open worktree in VS Code, `x` remove worktree, `b` back.
+bun run web:dev        # web UI, development — backend + Vite dev server (HMR)
+bun run web            # web UI, production   — builds once, serves everything on one port
+```
+
+First run (either front end) installs Claude Code lifecycle hooks into
+`~/.claude/settings.json` (merged, not clobbered) and writes
+`~/.scion/hooks/notify.sh`, so the dashboard can show live agent status.
+
+Full usage: [User Guide](docs/USER_GUIDE.md) (terminal UI) ·
+[Web Guide](docs/WEB_GUIDE.md) (web UI).
 
 Agent status: `working` (turn running) · `waiting` (needs input) · `review`
 (turn finished, unseen) · `idle` · `starting` · `done`.
 
 ## What it doesn't do (vs real Superset)
 
-PTYs don't survive app restart (no background daemon); no PR review, cloud sync,
-multi-agent presets, or GUI. See `~/.superset-local/host.db` for persisted state.
+PTYs don't survive an app restart (no background daemon); no PR review, cloud
+sync, or multi-agent presets. **Run one front end at a time** — the terminal UI
+and the web UI are separate processes, each with its own in-memory PTY table,
+so an agent started in one isn't visible/attachable from the other. See
+`~/.scion/host.db` for persisted state.

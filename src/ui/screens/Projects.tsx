@@ -57,7 +57,7 @@ export function Projects({ store, onOpen, onQuit }: Props) {
 	return (
 		<Box flexDirection="column" padding={1}>
 			<Text bold color="cyan">
-				superset-local · projects
+				Scion · projects
 			</Text>
 			<Box marginTop={1} flexDirection="column">
 				{projects.length === 0 && !adding && (

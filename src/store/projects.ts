@@ -21,7 +21,7 @@ import {
 	generateFriendlyBranchName,
 } from "../engine/branchName.ts";
 import { createUserSimpleGit } from "../engine/gitClient.ts";
-import { getSession } from "../engine/pty.ts";
+import { getSession, listSessions } from "../engine/pty.ts";
 import type { StatusStore } from "../engine/status.ts";
 import {
 	addWorktree,
@@ -35,10 +35,22 @@ export interface Store {
 	removeProject(id: string): void;
 	listWorkspaces(projectId: string): Workspace[];
 	getProject(id: string): Project | undefined;
+	getWorkspace(id: string): Workspace | undefined;
 	createWorkspace(args: {
 		projectId: string;
 		prompt: string;
 	}): Promise<{ workspace: Workspace; terminalId: string }>;
+	/**
+	 * Launch a fresh terminal in an EXISTING workspace's worktree — for when
+	 * its previous terminal ended (no background daemon keeps PTYs alive
+	 * across an app restart). No new worktree/branch is created. Resumes the
+	 * prior Claude conversation via `--resume <session_id>` when one was
+	 * captured from the lifecycle hook.
+	 */
+	resumeWorkspace(args: {
+		workspaceId: string;
+		prompt?: string;
+	}): Promise<{ terminalId: string }>;
 	deleteWorkspace(args: { workspaceId: string; deleteBranch: boolean }): Promise<void>;
 }
 
@@ -64,6 +76,10 @@ export function createStore(db: Db, status: StatusStore): Store {
 
 		getProject(id) {
 			return db.select().from(projects).where(eq(projects.id, id)).get();
+		},
+
+		getWorkspace(id) {
+			return db.select().from(workspaces).where(eq(workspaces.id, id)).get();
 		},
 
 		async addProject(repoPath) {
@@ -166,6 +182,56 @@ export function createStore(db: Db, status: StatusStore): Store {
 			getSession(terminalId)?.onExit(() => status.markExited(terminalId));
 
 			return { workspace, terminalId };
+		},
+
+		async resumeWorkspace({ workspaceId, prompt }) {
+			const workspace = db
+				.select()
+				.from(workspaces)
+				.where(eq(workspaces.id, workspaceId))
+				.get();
+			if (!workspace) throw new Error("Workspace not found");
+
+			// Already has a live terminal — nothing to resume.
+			const live = listSessions(workspaceId).find((s) => !s.exited);
+			if (live) return { terminalId: live.id };
+
+			// Reuse the most recent Claude session_id captured from the lifecycle
+			// hook (if any) so `--resume` continues the same conversation instead
+			// of starting fresh.
+			const bindings = status.listByWorkspace(workspaceId);
+			const resumeSessionId = bindings[0]?.agentSessionId ?? null;
+
+			// Old terminal_sessions rows for this workspace are now defunct (their
+			// PTY is gone) — clear them before inserting the new one; cascades
+			// remove their stale terminal_agent_bindings too.
+			for (const session of db
+				.select()
+				.from(terminalSessions)
+				.where(eq(terminalSessions.workspaceId, workspaceId))
+				.all()) {
+				db.delete(terminalSessions).where(eq(terminalSessions.id, session.id)).run();
+			}
+
+			const { terminalId } = launchClaude({
+				workspaceId,
+				worktreePath: workspace.worktreePath,
+				prompt,
+				resumeSessionId,
+			});
+			db.insert(terminalSessions)
+				.values({
+					id: terminalId,
+					workspaceId,
+					status: "active",
+					createdAt: Date.now(),
+					endedAt: null,
+				})
+				.run();
+
+			getSession(terminalId)?.onExit(() => status.markExited(terminalId));
+
+			return { terminalId };
 		},
 
 		async deleteWorkspace({ workspaceId, deleteBranch }) {

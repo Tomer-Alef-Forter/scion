@@ -85,6 +85,25 @@ export async function getColoredDiff(
 	return stdout || "(no changes vs base)";
 }
 
+/**
+ * Uncolored unified diff from the merge-base to the working tree, for clients
+ * (the web UI) that want to render/highlight the diff themselves rather than
+ * consume ANSI escape codes.
+ */
+export async function getUnifiedDiff(
+	repoPath: string,
+	worktreePath: string,
+): Promise<string> {
+	const base = await getBaseBranch(repoPath, worktreePath);
+	const origin = await mergeBase(worktreePath, base);
+	const { stdout } = await execFileAsync(
+		"git",
+		["--no-pager", "-c", "color.ui=never", "diff", origin],
+		{ cwd: worktreePath, maxBuffer: 64 * 1024 * 1024 },
+	).catch(() => ({ stdout: "" }));
+	return stdout;
+}
+
 /** True when the worktree has no uncommitted changes. */
 export async function isClean(worktreePath: string): Promise<boolean> {
 	const git = createUserSimpleGit(worktreePath);

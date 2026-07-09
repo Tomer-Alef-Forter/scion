@@ -1,6 +1,6 @@
-# superset-local — Visual Guide
+# Scion — Visual Guide
 
-A picture-first tour of superset-local: what the screens look like, how data
+A picture-first tour of Scion: what the screens look like, how data
 flows, how agent status changes, and the full lifecycle of a worktree. For the
 prose reference see [USER_GUIDE.md](./USER_GUIDE.md).
 
@@ -8,7 +8,7 @@ prose reference see [USER_GUIDE.md](./USER_GUIDE.md).
 
 ## 1. The big picture
 
-superset-local is a terminal UI that spawns Claude Code agents into isolated git
+Scion is a terminal UI that spawns Claude Code agents into isolated git
 worktrees and listens for their lifecycle events to show live status.
 
 ```
@@ -16,7 +16,7 @@ worktrees and listens for their lifecycle events to show live status.
    │  press n
    ▼
 ┌────────────────────┐
-│ superset-local TUI │
+│    Scion TUI       │
 │    (Ink / React)   │
 └──────────┬─────────┘
            │ 1. branch a worktree off base, spawn claude inside it
@@ -69,7 +69,7 @@ Three screens plus two full-screen modes. Everything is keyboard-driven.
 ### 3.1 Projects
 
 ```
-┌─ superset-local · projects ───────────────────────────────────────┐
+┌─ Scion · projects ─────────────────────────────────────────────────┐
 │                                                                    │
 │  ❯ analytics        /Users/tomeralef/dev/analytics                 │
 │    superset-local   /Users/tomeralef/Projects/superset-local       │
@@ -81,7 +81,7 @@ Three screens plus two full-screen modes. Everything is keyboard-driven.
 Press `a` to add a repo — an inline prompt appears (`~` is expanded):
 
 ```
-┌─ superset-local · projects ───────────────────────────────────────┐
+┌─ Scion · projects ─────────────────────────────────────────────────┐
 │                                                                    │
 │  ❯ analytics        /Users/tomeralef/dev/analytics                 │
 │                                                                    │
@@ -148,7 +148,7 @@ passthrough, scrollback replayed:
 
  ● I'll fix the flaky login redirect test. Let me read the test…
 
- [superset-local] attached — press Ctrl-b then d to detach
+ [scion] attached — press Ctrl-b then d to detach
 ════════════════════════════════════════════════════════════════════
 ```
 
@@ -281,7 +281,7 @@ ATTACH MODE                      │ b/esc back                       │
 ## 7. What lives where
 
 ```
-~/.superset-local/
+~/.scion/
 ├── host.db                      ← SQLite: projects, workspaces, agent bindings
 ├── .installed                   ← first-run marker (timestamp)
 ├── hooks/
@@ -308,4 +308,4 @@ ATTACH MODE                      │ b/esc back                       │
 ```
 
 > **One repo → many worktrees → many agents, each on its own branch, all
-> visible on one dashboard.** That's superset-local.
+> visible on one dashboard.** That's Scion.

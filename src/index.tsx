@@ -1,5 +1,5 @@
 #!/usr/bin/env -S npx tsx
-// superset-local entry point. Runs under Node via tsx (node-pty + better-sqlite3
+// Scion entry point. Runs under Node via tsx (node-pty + better-sqlite3
 // need Node's native-addon loader; they don't work under Bun).
 // Boot order: setup-if-needed → open+migrate SQLite → start hook server →
 // render the Ink TUI in a loop that hands off to raw terminal takeovers
@@ -43,7 +43,7 @@ async function main() {
 	if (!existsSync(INSTALLED_MARKER)) {
 		installClaudeHooks();
 		writeFileSync(INSTALLED_MARKER, new Date().toISOString());
-		console.log(`[superset-local] installed Claude hooks; data dir ${DATA_DIR}`);
+		console.log(`[scion] installed Claude hooks; data dir ${DATA_DIR}`);
 	}
 
 	const db = createDb(DB_PATH);
@@ -80,6 +80,6 @@ async function main() {
 }
 
 main().catch((err) => {
-	console.error("[superset-local] fatal:", err);
+	console.error("[scion] fatal:", err);
 	process.exit(1);
 });
