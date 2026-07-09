@@ -14,13 +14,20 @@ import {
 	terminalSessions,
 	workspaces,
 } from "../db/schema.ts";
-import { launchClaude } from "../engine/agents.ts";
+import { launchAgent } from "../engine/agents.ts";
 import {
 	deduplicateBranchName,
 	generateBranchName,
 	generateFriendlyBranchName,
 } from "../engine/branchName.ts";
+import { invalidateDiffCache, isClean } from "../engine/diff.ts";
 import { createUserSimpleGit } from "../engine/gitClient.ts";
+import {
+	findOrphanedWorktrees,
+	type OrphanedWorktree,
+	pruneEmptyWorktreeDirs,
+	removeOrphanedWorktree,
+} from "../engine/orphans.ts";
 import { getSession, listSessions } from "../engine/pty.ts";
 import type { StatusStore } from "../engine/status.ts";
 import {
@@ -28,6 +35,7 @@ import {
 	removeWorktree,
 	resolveDefaultBranch,
 } from "../engine/worktrees.ts";
+import { type HostSettings, getHostSettings, updateHostSettings } from "./hostSettings.ts";
 
 export interface Store {
 	listProjects(): Project[];
@@ -36,9 +44,11 @@ export interface Store {
 	listWorkspaces(projectId: string): Workspace[];
 	getProject(id: string): Project | undefined;
 	getWorkspace(id: string): Workspace | undefined;
+	renameWorkspace(id: string, name: string): void;
 	createWorkspace(args: {
 		projectId: string;
 		prompt: string;
+		name?: string;
 	}): Promise<{ workspace: Workspace; terminalId: string }>;
 	/**
 	 * Launch a fresh terminal in an EXISTING workspace's worktree — for when
@@ -51,7 +61,20 @@ export interface Store {
 		workspaceId: string;
 		prompt?: string;
 	}): Promise<{ terminalId: string }>;
-	deleteWorkspace(args: { workspaceId: string; deleteBranch: boolean }): Promise<void>;
+	/**
+	 * Removes the worktree (and optionally the branch). Refuses if the
+	 * worktree has uncommitted changes unless `force` is set — `git worktree
+	 * remove --force --force` would otherwise silently discard real work.
+	 */
+	deleteWorkspace(args: {
+		workspaceId: string;
+		deleteBranch: boolean;
+		force?: boolean;
+	}): Promise<void>;
+	getSettings(): HostSettings;
+	updateSettings(patch: Partial<HostSettings>): HostSettings;
+	listOrphanedWorktrees(): OrphanedWorktree[];
+	cleanupOrphanedWorktrees(): Promise<{ removed: number; failed: number; emptyDirsRemoved: number }>;
 }
 
 function titleFromPrompt(prompt: string, fallback: string): string {
@@ -80,6 +103,12 @@ export function createStore(db: Db, status: StatusStore): Store {
 
 		getWorkspace(id) {
 			return db.select().from(workspaces).where(eq(workspaces.id, id)).get();
+		},
+
+		renameWorkspace(id, name) {
+			const trimmed = name.trim();
+			if (!trimmed) throw new Error("Name cannot be empty");
+			db.update(workspaces).set({ name: trimmed }).where(eq(workspaces.id, id)).run();
 		},
 
 		async addProject(repoPath) {
@@ -131,7 +160,7 @@ export function createStore(db: Db, status: StatusStore): Store {
 			return live;
 		},
 
-		async createWorkspace({ projectId, prompt }) {
+		async createWorkspace({ projectId, prompt, name }) {
 			const project = db
 				.select()
 				.from(projects)
@@ -151,19 +180,25 @@ export function createStore(db: Db, status: StatusStore): Store {
 				branch,
 			});
 
+			// Captured now, not re-read later — a workspace keeps using the agent
+			// it was created with even if the default setting changes afterward.
+			const { defaultAgent } = getHostSettings(db);
+
 			const workspace: Workspace = {
 				id: randomUUID(),
 				projectId,
 				worktreePath,
 				branch,
 				baseBranch,
-				name: titleFromPrompt(prompt, branch),
+				name: name ?? titleFromPrompt(prompt, branch),
 				type: "worktree",
+				agentType: defaultAgent,
 				createdAt: Date.now(),
 			};
 			db.insert(workspaces).values(workspace).run();
 
-			const { terminalId } = launchClaude({
+			const { terminalId } = launchAgent({
+				agentType: defaultAgent,
 				workspaceId: workspace.id,
 				worktreePath,
 				prompt,
@@ -213,7 +248,8 @@ export function createStore(db: Db, status: StatusStore): Store {
 				db.delete(terminalSessions).where(eq(terminalSessions.id, session.id)).run();
 			}
 
-			const { terminalId } = launchClaude({
+			const { terminalId } = launchAgent({
+				agentType: workspace.agentType,
 				workspaceId,
 				worktreePath: workspace.worktreePath,
 				prompt,
@@ -234,13 +270,20 @@ export function createStore(db: Db, status: StatusStore): Store {
 			return { terminalId };
 		},
 
-		async deleteWorkspace({ workspaceId, deleteBranch }) {
+		async deleteWorkspace({ workspaceId, deleteBranch, force }) {
 			const row = db
 				.select()
 				.from(workspaces)
 				.where(eq(workspaces.id, workspaceId))
 				.get();
 			if (!row) return;
+
+			if (!force && existsSync(row.worktreePath) && !(await isClean(row.worktreePath))) {
+				throw new Error(
+					"Worktree has uncommitted changes — commit or discard them first, or confirm to delete anyway.",
+				);
+			}
+
 			const project = db
 				.select()
 				.from(projects)
@@ -264,6 +307,43 @@ export function createStore(db: Db, status: StatusStore): Store {
 				});
 			}
 			db.delete(workspaces).where(eq(workspaces.id, workspaceId)).run();
+			invalidateDiffCache(row.worktreePath);
+		},
+
+		getSettings() {
+			return getHostSettings(db);
+		},
+
+		updateSettings(patch) {
+			return updateHostSettings(db, patch);
+		},
+
+		listOrphanedWorktrees() {
+			const knownPaths = new Set(
+				db.select().from(workspaces).all().map((w) => w.worktreePath),
+			);
+			return findOrphanedWorktrees(knownPaths);
+		},
+
+		async cleanupOrphanedWorktrees() {
+			const knownPaths = new Set(
+				db.select().from(workspaces).all().map((w) => w.worktreePath),
+			);
+			const orphans = findOrphanedWorktrees(knownPaths);
+			const allProjects = db.select().from(projects).all();
+
+			let removed = 0;
+			let failed = 0;
+			for (const orphan of orphans) {
+				try {
+					await removeOrphanedWorktree(orphan, allProjects);
+					removed++;
+				} catch {
+					failed++;
+				}
+			}
+			const emptyDirsRemoved = pruneEmptyWorktreeDirs();
+			return { removed, failed, emptyDirsRemoved };
 		},
 	};
 }

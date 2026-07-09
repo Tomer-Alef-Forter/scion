@@ -6,18 +6,35 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { eq } from "drizzle-orm";
+import { WORKTREES_ROOT } from "../src/config.ts";
 import { createDb } from "../src/db/db.ts";
 import { terminalSessions, workspaces } from "../src/db/schema.ts";
 import { getHookUrl } from "../src/hookAddr.ts";
-import { buildClaudeArgv } from "../src/engine/agents.ts";
-import { getDiffSummary } from "../src/engine/diff.ts";
+import { buildAgentArgv, buildClaudeArgv } from "../src/engine/agents.ts";
+import { getCachedDiffSummary, getDiffSummary, invalidateDiffCache } from "../src/engine/diff.ts";
 import { listFiles, readWorktreeFile } from "../src/engine/files.ts";
 import { mergeBack } from "../src/engine/mergeBack.ts";
 import { getSession, killAll, spawnSession } from "../src/engine/pty.ts";
 import { createStatusStore } from "../src/engine/status.ts";
-import { addWorktree } from "../src/engine/worktrees.ts";
+import { addWorktree, removeWorktree } from "../src/engine/worktrees.ts";
 import { startHookServer } from "../src/hookServer.ts";
 import { createStore } from "../src/store/projects.ts";
+
+// This script does real filesystem writes/deletes under config.ts's
+// DATA_DIR/WORKTREES_ROOT, which resolve from $HOME — refuse to run unless
+// scripts/run-isolated.ts (see package.json's "smoke" script) has already
+// pointed $HOME at a throwaway directory. Without this, an isolated test
+// database checked against the real, shared WORKTREES_ROOT once caused a
+// test to delete real, in-use workspace directories.
+if (!process.env.SL_ISOLATED_HOME) {
+	console.error(
+		"refusing to run: this script must be invoked via `bun run smoke` " +
+			"(scripts/run-isolated.ts), not `tsx scripts/smoke.ts` directly — " +
+			"it does real filesystem writes/deletes under $HOME/.scion.",
+	);
+	process.exit(1);
+}
 
 let failures = 0;
 function check(label: string, cond: boolean) {
@@ -43,6 +60,7 @@ async function main() {
 	const store = createStore(db, status);
 	const server = await startHookServer(status);
 
+	let wt: Awaited<ReturnType<typeof addWorktree>> | undefined;
 	try {
 		const project = await store.addProject(repo);
 		check(
@@ -50,7 +68,7 @@ async function main() {
 			store.listProjects().some((p) => p.id === project.id),
 		);
 
-		const wt = await addWorktree({
+		wt = await addWorktree({
 			projectId: project.id,
 			repoPath: repo,
 			branch: "feat/smoke",
@@ -70,6 +88,29 @@ async function main() {
 		const summary = await getDiffSummary(repo, wt.worktreePath);
 		check("diff summary sees 1 changed file", summary.filesChanged === 1);
 		check("diff summary counts insertions", summary.insertions >= 1);
+
+		// ---- getCachedDiffSummary: coalesces repeat calls, invalidate forces a
+		// fresh recompute ----
+
+		const cachedBefore = await getCachedDiffSummary(repo, wt.worktreePath);
+		check("cached diff summary matches an uncached call", cachedBefore.filesChanged === 1);
+
+		writeFileSync(join(wt.worktreePath, "feature2.txt"), "a second change\n");
+		git(wt.worktreePath, ["add", "-A"]);
+		git(wt.worktreePath, ["commit", "-q", "-m", "add feature2"]);
+
+		const cachedAfterChange = await getCachedDiffSummary(repo, wt.worktreePath);
+		check(
+			"cached diff summary ignores a change made within the TTL window",
+			cachedAfterChange.filesChanged === 1,
+		);
+
+		invalidateDiffCache(wt.worktreePath);
+		const freshAfterInvalidate = await getCachedDiffSummary(repo, wt.worktreePath);
+		check(
+			"invalidateDiffCache forces the next call to recompute",
+			freshAfterInvalidate.filesChanged === 2,
+		);
 
 		// ---- engine/files.ts: read-only file browser ----
 
@@ -219,6 +260,156 @@ async function main() {
 				]),
 		);
 
+		// ---- buildAgentArgv: gemini/codex flag handling (pure, no spawn) ----
+
+		check(
+			"buildAgentArgv(gemini): --yolo, prompt via -i",
+			JSON.stringify(buildAgentArgv("gemini", { prompt: "fix bug" })) ===
+				JSON.stringify(["--yolo", "-i", "fix bug"]),
+		);
+		check(
+			"buildAgentArgv(gemini): no prompt omits -i",
+			JSON.stringify(buildAgentArgv("gemini", {})) === JSON.stringify(["--yolo"]),
+		);
+		check(
+			"buildAgentArgv(codex): bypass flag + prompt positional",
+			JSON.stringify(buildAgentArgv("codex", { prompt: "fix bug" })) ===
+				JSON.stringify(["--dangerously-bypass-approvals-and-sandbox", "fix bug"]),
+		);
+
+		// ---- host settings: default agent is captured onto the workspace ----
+
+		const defaultSettings = store.getSettings();
+		check(
+			"getSettings defaults to claude/vscode",
+			defaultSettings.defaultAgent === "claude" && defaultSettings.defaultEditor === "vscode",
+		);
+		const updated = store.updateSettings({ defaultAgent: "gemini" });
+		check("updateSettings persists defaultAgent", updated.defaultAgent === "gemini");
+		check(
+			"updateSettings leaves defaultEditor untouched by a partial patch",
+			updated.defaultEditor === "vscode",
+		);
+
+		const geminiWorkspace = await store.createWorkspace({
+			projectId: project.id,
+			prompt: "smoke test gemini workspace",
+		});
+		check(
+			"createWorkspace captures the current default agent onto the workspace",
+			geminiWorkspace.workspace.agentType === "gemini",
+		);
+		getSession(geminiWorkspace.terminalId)?.kill();
+		await store.deleteWorkspace({
+			workspaceId: geminiWorkspace.workspace.id,
+			deleteBranch: true,
+		});
+		store.updateSettings({ defaultAgent: "claude" }); // restore for later checks
+
+		// ---- boot-time reconcile: a stale 'active' session from a previous run
+		// gets marked 'ended' the moment the app restarts (PTYs never survive a
+		// restart, so it's definitionally dead) ----
+
+		const reconcileWsId = "ws-reconcile-smoke";
+		const reconcileTerminalId = "term-reconcile-smoke";
+		db.insert(workspaces)
+			.values({
+				id: reconcileWsId,
+				projectId: project.id,
+				worktreePath: wt.worktreePath,
+				branch: "feat/smoke",
+				baseBranch: "main",
+				name: "reconcile-smoke-workspace",
+				type: "worktree",
+				createdAt: Date.now(),
+			})
+			.run();
+		db.insert(terminalSessions)
+			.values({
+				id: reconcileTerminalId,
+				workspaceId: reconcileWsId,
+				status: "active",
+				createdAt: Date.now(),
+				endedAt: null,
+			})
+			.run();
+		// Simulate an app restart: open a fresh connection to the SAME db file —
+		// createDb's reconcile step should run again and fix the stale row.
+		const dbAfterRestart = createDb(join(base, "host.db"));
+		const reconciledRow = dbAfterRestart
+			.select()
+			.from(terminalSessions)
+			.where(eq(terminalSessions.id, reconcileTerminalId))
+			.get();
+		check(
+			"boot reconcile marks a stale 'active' session 'ended' on restart",
+			reconciledRow?.status === "ended" && reconciledRow?.endedAt != null,
+		);
+
+		// ---- deleteWorkspace refuses on uncommitted changes unless forced ----
+
+		const dirtyWs = await store.createWorkspace({
+			projectId: project.id,
+			prompt: "smoke test dirty workspace",
+		});
+		getSession(dirtyWs.terminalId)?.kill();
+		writeFileSync(join(dirtyWs.workspace.worktreePath, "uncommitted.txt"), "oops\n");
+
+		let deleteWithoutForceThrew = false;
+		try {
+			await store.deleteWorkspace({ workspaceId: dirtyWs.workspace.id, deleteBranch: true });
+		} catch {
+			deleteWithoutForceThrew = true;
+		}
+		check(
+			"deleteWorkspace refuses when the worktree has uncommitted changes",
+			deleteWithoutForceThrew && existsSync(dirtyWs.workspace.worktreePath),
+		);
+
+		await store.deleteWorkspace({
+			workspaceId: dirtyWs.workspace.id,
+			deleteBranch: true,
+			force: true,
+		});
+		check(
+			"deleteWorkspace with force:true removes it anyway",
+			!existsSync(dirtyWs.workspace.worktreePath),
+		);
+
+		// ---- orphaned worktrees: detection walks nested branch dirs correctly
+		// (a slash in the branch name nests the worktree deeper than a naive
+		// fixed-depth scan assumes — this exact repo's own "feat/smoke" branch
+		// above is an example) and cleanup removes the leftover empty parent.
+		// Uses a distinct top segment ("orphan-parent") so pruning it doesn't
+		// interfere with "feat/smoke", which is still alive at this point. ----
+
+		const orphanWt = await addWorktree({
+			projectId: project.id,
+			repoPath: repo,
+			branch: "orphan-parent/orphan-test",
+		});
+		// No workspace row was ever created for this one — it's orphaned by
+		// construction, same as if its row had been wiped after the fact.
+		const orphanParentDir = join(WORKTREES_ROOT, project.id, "orphan-parent");
+		const orphansFound = store.listOrphanedWorktrees();
+		check(
+			"listOrphanedWorktrees finds a nested-branch orphan (not the false positive of its parent dir)",
+			orphansFound.some((o) => o.path === orphanWt.worktreePath) &&
+				!orphansFound.some((o) => o.path === orphanParentDir),
+		);
+
+		const cleanupResult = await store.cleanupOrphanedWorktrees();
+		check(
+			"cleanupOrphanedWorktrees removes it and the now-empty parent dir",
+			cleanupResult.removed >= 1 &&
+				!existsSync(orphanWt.worktreePath) &&
+				!existsSync(orphanParentDir),
+		);
+		check(
+			"listOrphanedWorktrees is empty after cleanup",
+			store.listOrphanedWorktrees().length === 0,
+		);
+
 		// ---- resumeWorkspace: already-live short-circuit (no real claude spawn) ----
 
 		const resumeWorkspaceId = "ws-resume-smoke-1";
@@ -261,6 +452,16 @@ async function main() {
 	} finally {
 		killAll();
 		server.close();
+		// Belt-and-suspenders cleanup even though run-isolated.ts (which this
+		// script must be run through — see package.json) tears down the whole
+		// isolated $HOME afterward regardless.
+		if (wt) {
+			await removeWorktree({
+				repoPath: repo,
+				worktreePath: wt.worktreePath,
+				deleteBranch: "feat/smoke",
+			}).catch(() => {});
+		}
 		execFileSync("rm", ["-rf", base]);
 	}
 

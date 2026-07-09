@@ -70,6 +70,43 @@ export async function getDiffSummary(
 	return { filesChanged, insertions, deletions, uncommitted };
 }
 
+interface DiffCacheEntry {
+	promise: Promise<DiffSummary>;
+	computedAt: number;
+}
+
+const DEFAULT_DIFF_CACHE_TTL_MS = 2000;
+const diffCache = new Map<string, DiffCacheEntry>();
+
+/**
+ * Same as getDiffSummary, but coalesces repeat calls for the same worktree
+ * within `ttlMs` into a single set of git invocations. Both front ends poll
+ * this on a timer AND refetch on every agent status-change event — without
+ * caching that's several `git` subprocesses per workspace, every few
+ * seconds, regardless of whether anything on disk actually changed.
+ */
+export function getCachedDiffSummary(
+	repoPath: string,
+	worktreePath: string,
+	ttlMs = DEFAULT_DIFF_CACHE_TTL_MS,
+): Promise<DiffSummary> {
+	const cached = diffCache.get(worktreePath);
+	if (cached && Date.now() - cached.computedAt < ttlMs) return cached.promise;
+
+	const promise = getDiffSummary(repoPath, worktreePath);
+	diffCache.set(worktreePath, { promise, computedAt: Date.now() });
+	return promise;
+}
+
+/**
+ * Force the next getCachedDiffSummary call for this worktree to recompute —
+ * call after actions known to change it (merge, delete) so the UI reflects
+ * the change immediately instead of waiting out the TTL.
+ */
+export function invalidateDiffCache(worktreePath: string): void {
+	diffCache.delete(worktreePath);
+}
+
 /** Colored unified diff from the merge-base to the working tree. */
 export async function getColoredDiff(
 	repoPath: string,

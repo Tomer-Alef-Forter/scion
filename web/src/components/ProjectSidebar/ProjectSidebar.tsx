@@ -1,4 +1,4 @@
-import { Moon, Sun } from "lucide-react";
+import { Moon, Settings, Sun } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { useTheme } from "../../lib/useTheme";
@@ -10,6 +10,7 @@ interface ProjectSidebarProps {
 	onSelect: (projectId: string) => void;
 	onAdd: (repoPath: string) => Promise<void>;
 	onRemove: (projectId: string) => void;
+	onOpenSettings: () => void;
 	busy: boolean;
 }
 
@@ -19,6 +20,7 @@ export function ProjectSidebar({
 	onSelect,
 	onAdd,
 	onRemove,
+	onOpenSettings,
 	busy,
 }: ProjectSidebarProps) {
 	const [repoPathInput, setRepoPathInput] = useState("");
@@ -40,14 +42,24 @@ export function ProjectSidebar({
 					<img src="/logo.svg" alt="" className="size-5" />
 					<h1 className="text-sm font-semibold">Scion</h1>
 				</div>
-				<button
-					type="button"
-					onClick={toggleTheme}
-					title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-					className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-				>
-					{theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-				</button>
+				<div className="flex items-center gap-0.5">
+					<button
+						type="button"
+						onClick={onOpenSettings}
+						title="Settings"
+						className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+					>
+						<Settings className="size-4" />
+					</button>
+					<button
+						type="button"
+						onClick={toggleTheme}
+						title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+						className="rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+					>
+						{theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+					</button>
+				</div>
 			</div>
 			<div className="flex-1 overflow-y-auto p-2">
 				<ul className="space-y-0.5">

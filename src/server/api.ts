@@ -2,13 +2,17 @@
 // TUI uses — no new business logic, just JSON in/out.
 import { homedir } from "node:os";
 import { Hono } from "hono";
-import { getDiffSummary, getUnifiedDiff } from "../engine/diff.ts";
+import type { AgentType, EditorType } from "../db/schema.ts";
+import { getCachedDiffSummary, getUnifiedDiff, invalidateDiffCache } from "../engine/diff.ts";
 import { listFiles, readWorktreeFile } from "../engine/files.ts";
 import { mergeBack } from "../engine/mergeBack.ts";
 import { listSessions } from "../engine/pty.ts";
 import type { StatusStore } from "../engine/status.ts";
 import { openInEditor } from "../lib/openInEditor.ts";
 import type { Store } from "../store/projects.ts";
+
+const AGENT_TYPES: AgentType[] = ["claude", "gemini", "codex"];
+const EDITOR_TYPES: EditorType[] = ["vscode", "cursor", "zed"];
 
 export interface ApiDeps {
 	store: Store;
@@ -35,6 +39,29 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 	const api = new Hono();
 
 	api.get("/health", (c) => c.json({ ok: true }));
+
+	// ---- settings ----
+
+	api.get("/settings", (c) => c.json(store.getSettings()));
+
+	api.put("/settings", async (c) => {
+		const body = await c.req.json().catch(() => ({}));
+		const patch: { defaultAgent?: AgentType; defaultEditor?: EditorType } = {};
+		if (AGENT_TYPES.includes(body.defaultAgent)) patch.defaultAgent = body.defaultAgent;
+		if (EDITOR_TYPES.includes(body.defaultEditor)) patch.defaultEditor = body.defaultEditor;
+		return c.json(store.updateSettings(patch));
+	});
+
+	// ---- orphaned worktrees (dirs on disk with no matching workspace row —
+	// left behind by a removed project/workspace whose worktree didn't get
+	// cleaned up) ----
+
+	api.get("/orphaned-worktrees", (c) => c.json(store.listOrphanedWorktrees()));
+
+	api.post("/orphaned-worktrees/cleanup", async (c) => {
+		const result = await store.cleanupOrphanedWorktrees();
+		return c.json(result);
+	});
 
 	// ---- projects ----
 
@@ -72,7 +99,7 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 				const liveSessions = listSessions(workspace.id).filter(
 					(s) => !s.exited,
 				);
-				const diff = await getDiffSummary(
+				const diff = await getCachedDiffSummary(
 					project.repoPath,
 					workspace.worktreePath,
 				).catch(() => null);
@@ -84,6 +111,12 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 				let derivedStatus: string;
 				if (liveSessions.length === 0) {
 					derivedStatus = "done";
+				} else if (workspace.agentType !== "claude") {
+					// Only Claude Code reports lifecycle events via hooks — other
+					// agents have no equivalent, so there's no way to distinguish
+					// working/waiting/review for them. Best effort: just "working"
+					// for the life of the session.
+					derivedStatus = "working";
 				} else {
 					const bindings = status.listByWorkspace(workspace.id);
 					derivedStatus = bindings[0]?.status ?? "starting";
@@ -103,8 +136,9 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 		const projectId = c.req.param("id");
 		const body = await c.req.json().catch(() => ({}));
 		const prompt = typeof body.prompt === "string" ? body.prompt : "";
+		const name = typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined;
 		try {
-			const result = await store.createWorkspace({ projectId, prompt });
+			const result = await store.createWorkspace({ projectId, prompt, name });
 			return c.json(result, 201);
 		} catch (err) {
 			return c.json({ error: errMsg(err) }, 400);
@@ -125,11 +159,31 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 		}
 	});
 
+	api.post("/workspaces/:id/rename", async (c) => {
+		const workspaceId = c.req.param("id");
+		if (!store.getWorkspace(workspaceId)) {
+			return c.json({ error: "Workspace not found" }, 404);
+		}
+		const body = await c.req.json().catch(() => ({}));
+		const name = typeof body.name === "string" ? body.name : "";
+		try {
+			store.renameWorkspace(workspaceId, name);
+			return c.json({ ok: true });
+		} catch (err) {
+			return c.json({ error: errMsg(err) }, 400);
+		}
+	});
+
 	api.delete("/workspaces/:id", async (c) => {
 		const workspaceId = c.req.param("id");
 		const deleteBranch = c.req.query("deleteBranch") === "true";
-		await store.deleteWorkspace({ workspaceId, deleteBranch });
-		return c.json({ ok: true });
+		const force = c.req.query("force") === "true";
+		try {
+			await store.deleteWorkspace({ workspaceId, deleteBranch, force });
+			return c.json({ ok: true });
+		} catch (err) {
+			return c.json({ error: errMsg(err) }, 400);
+		}
 	});
 
 	api.get("/workspaces/:id/diff", async (c) => {
@@ -150,13 +204,15 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 			branch: resolved.workspace.branch,
 			worktreePath: resolved.workspace.worktreePath,
 		});
+		invalidateDiffCache(resolved.workspace.worktreePath);
 		return c.json(result);
 	});
 
 	api.post("/workspaces/:id/open", async (c) => {
 		const resolved = resolveWorkspace(store, c.req.param("id"));
 		if (!resolved) return c.json({ error: "Workspace not found" }, 404);
-		await openInEditor(resolved.workspace.worktreePath);
+		const { defaultEditor } = store.getSettings();
+		await openInEditor(resolved.workspace.worktreePath, defaultEditor);
 		return c.json({ ok: true });
 	});
 

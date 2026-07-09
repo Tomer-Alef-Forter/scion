@@ -29,14 +29,21 @@ interface WorkspaceCardProps {
 	workspace: WorkspaceWithStatus;
 	selected: boolean;
 	onClick: () => void;
+	onContextMenu: (e: React.MouseEvent) => void;
 }
 
-export function WorkspaceCard({ workspace, selected, onClick }: WorkspaceCardProps) {
+export function WorkspaceCard({
+	workspace,
+	selected,
+	onClick,
+	onContextMenu,
+}: WorkspaceCardProps) {
 	const diff = workspace.diff;
 	return (
 		<button
 			type="button"
 			onClick={onClick}
+			onContextMenu={onContextMenu}
 			className={cn(
 				"flex min-h-[52px] w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
 				selected ? "bg-accent" : "hover:bg-muted/50",

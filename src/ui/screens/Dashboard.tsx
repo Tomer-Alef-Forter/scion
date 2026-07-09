@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useReducer, useState } from "react";
 import type { DiffSummary } from "../../engine/diff.ts";
-import { getDiffSummary } from "../../engine/diff.ts";
+import { getCachedDiffSummary, invalidateDiffCache } from "../../engine/diff.ts";
 import { mergeBack } from "../../engine/mergeBack.ts";
 import { listSessions as ptyListSessions } from "../../engine/pty.ts";
 import type { AgentStatus, StatusStore } from "../../engine/status.ts";
@@ -63,7 +63,7 @@ export function Dashboard({
 			if (!project) return;
 			const next: Record<string, DiffSummary> = {};
 			for (const ws of workspaces) {
-				next[ws.id] = await getDiffSummary(project.repoPath, ws.worktreePath);
+				next[ws.id] = await getCachedDiffSummary(project.repoPath, ws.worktreePath);
 			}
 			if (!cancelled) setSummaries(next);
 		})();
@@ -150,7 +150,10 @@ export function Dashboard({
 				branch: selected.branch,
 				worktreePath: selected.worktreePath,
 			})
-				.then((r) => setMessage(r.message))
+				.then((r) => {
+					invalidateDiffCache(selected.worktreePath);
+					setMessage(r.message);
+				})
 				.catch((e) => setMessage(`Merge failed: ${e instanceof Error ? e.message : e}`))
 				.finally(() => {
 					setBusy(false);

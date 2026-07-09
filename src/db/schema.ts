@@ -37,6 +37,13 @@ export const workspaces = sqliteTable(
 		baseBranch: text("base_branch"),
 		name: text().notNull().default(""),
 		type: text().$type<"main" | "worktree">().notNull().default("worktree"),
+		// Captured from the global default at creation time — a workspace keeps
+		// using the agent it was created with (resume relaunches the same CLI),
+		// independent of later settings changes.
+		agentType: text("agent_type")
+			.$type<AgentType>()
+			.notNull()
+			.default("claude"),
 		createdAt: integer("created_at")
 			.notNull()
 			.$defaultFn(() => Date.now()),
@@ -85,9 +92,14 @@ export const terminalAgentBindings = sqliteTable(
 	],
 );
 
+export type AgentType = "claude" | "gemini" | "codex";
+export type EditorType = "vscode" | "cursor" | "zed";
+
 export const hostSettings = sqliteTable("host_settings", {
 	id: integer().primaryKey().default(1),
 	worktreeBaseDir: text("worktree_base_dir"),
+	defaultAgent: text("default_agent").$type<AgentType>().notNull().default("claude"),
+	defaultEditor: text("default_editor").$type<EditorType>().notNull().default("vscode"),
 });
 
 export type Project = typeof projects.$inferSelect;

@@ -5,15 +5,31 @@
 // Run: `bun run web:smoke`.
 import { serve } from "@hono/node-server";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb } from "../src/db/db.ts";
 import { createStatusStore } from "../src/engine/status.ts";
 import { getSession, killAll, spawnSession } from "../src/engine/pty.ts";
+import { addWorktree } from "../src/engine/worktrees.ts";
 import { createStore } from "../src/store/projects.ts";
 import { createServerApp } from "../src/server/app.ts";
 import { terminalSessions, workspaces } from "../src/db/schema.ts";
+
+// This script does real filesystem writes/deletes under config.ts's
+// DATA_DIR/WORKTREES_ROOT, which resolve from $HOME — refuse to run unless
+// scripts/run-isolated.ts (see package.json's "web:smoke" script) has
+// already pointed $HOME at a throwaway directory. Without this, an isolated
+// test database checked against the real, shared WORKTREES_ROOT once caused
+// a test to delete real, in-use workspace directories.
+if (!process.env.SL_ISOLATED_HOME) {
+	console.error(
+		"refusing to run: this script must be invoked via `bun run web:smoke` " +
+			"(scripts/run-isolated.ts), not `tsx scripts/web-smoke.ts` directly " +
+			"— it does real filesystem writes/deletes under $HOME/.scion.",
+	);
+	process.exit(1);
+}
 
 let failures = 0;
 function check(label: string, cond: boolean) {
@@ -43,6 +59,47 @@ async function main() {
 
 	const health = await app.request("/api/health");
 	check("GET /api/health -> 200", health.status === 200);
+
+	// ---- settings ----
+
+	const getSettingsRes = await app.request("/api/settings");
+	const initialSettings = await getSettingsRes.json();
+	check(
+		"GET /api/settings defaults to claude/vscode",
+		getSettingsRes.status === 200 &&
+			initialSettings.defaultAgent === "claude" &&
+			initialSettings.defaultEditor === "vscode",
+	);
+
+	const putSettingsRes = await app.request("/api/settings", {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ defaultAgent: "gemini", defaultEditor: "cursor" }),
+	});
+	const putSettings = await putSettingsRes.json();
+	check(
+		"PUT /api/settings persists valid values",
+		putSettings.defaultAgent === "gemini" && putSettings.defaultEditor === "cursor",
+	);
+
+	const invalidSettingsRes = await app.request("/api/settings", {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ defaultAgent: "not-a-real-agent" }),
+	});
+	const invalidSettings = await invalidSettingsRes.json();
+	check(
+		"PUT /api/settings ignores an invalid agent value",
+		invalidSettings.defaultAgent === "gemini",
+	);
+
+	// Restore claude before the rest of the suite (which assumes claude-based
+	// status derivation, e.g. the stale-binding regression check below).
+	await app.request("/api/settings", {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ defaultAgent: "claude", defaultEditor: "vscode" }),
+	});
 
 	// Production (`bun run web`) serves the built frontend from this same
 	// server — requires `web/dist` to exist (run `bun run --cwd web build`
@@ -84,6 +141,59 @@ async function main() {
 	check("POST /api/projects/:id/workspaces -> 201", createWsRes.status === 201);
 	const created = await createWsRes.json();
 	check("created workspace + terminalId", !!created.workspace?.id && !!created.terminalId);
+	check(
+		"workspace name defaults from the prompt when name is omitted",
+		created.workspace.name === "smoke test task",
+	);
+
+	const namedWsRes = await app.request(`/api/projects/${project.id}/workspaces`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ prompt: "smoke test task", name: "my custom name" }),
+	});
+	const namedCreated = await namedWsRes.json();
+	check(
+		"POST /api/projects/:id/workspaces honors an explicit name",
+		namedCreated.workspace?.name === "my custom name",
+	);
+	getSession(namedCreated.terminalId)?.kill();
+	// Downstream checks assume a single workspace under this project.
+	await store.deleteWorkspace({ workspaceId: namedCreated.workspace.id, deleteBranch: true });
+
+	const emptyWsRes = await app.request(`/api/projects/${project.id}/workspaces`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({}),
+	});
+	const emptyCreated = await emptyWsRes.json();
+	check(
+		"POST /api/projects/:id/workspaces works with no prompt or name",
+		emptyWsRes.status === 201 && !!emptyCreated.workspace?.name && !!emptyCreated.workspace?.branch,
+	);
+	getSession(emptyCreated.terminalId)?.kill();
+	await store.deleteWorkspace({ workspaceId: emptyCreated.workspace.id, deleteBranch: true });
+
+	// ---- non-Claude agents: no hook events ever arrive, so status derivation
+	// falls back to a generic "working" instead of getting stuck on "starting" ----
+	await store.updateSettings({ defaultAgent: "gemini" });
+	const geminiWsRes = await app.request(`/api/projects/${project.id}/workspaces`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ prompt: "smoke test gemini workspace" }),
+	});
+	const geminiCreated = await geminiWsRes.json();
+	const listWithGeminiRes = await app.request(`/api/projects/${project.id}/workspaces`);
+	const listWithGemini = await listWithGeminiRes.json();
+	const geminiRow = listWithGemini.find(
+		(w: { id: string }) => w.id === geminiCreated.workspace.id,
+	);
+	check(
+		"non-Claude agent with a live session reports 'working', not 'starting'",
+		geminiRow?.status === "working",
+	);
+	getSession(geminiCreated.terminalId)?.kill();
+	await store.deleteWorkspace({ workspaceId: geminiCreated.workspace.id, deleteBranch: true });
+	await store.updateSettings({ defaultAgent: "claude" });
 
 	// Real claude was launched by createWorkspace; kill it immediately — this
 	// test only needs the workspace row, not a live claude process.
@@ -127,6 +237,28 @@ async function main() {
 	});
 	const mergeResult = await mergeRes.json();
 	check("POST /api/workspaces/:id/merge succeeds", mergeResult.ok === true);
+
+	const renameRes = await app.request(`/api/workspaces/${created.workspace.id}/rename`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ name: "renamed-workspace" }),
+	});
+	const workspacesAfterRename = await (
+		await app.request(`/api/projects/${project.id}/workspaces`)
+	).json();
+	check(
+		"POST /api/workspaces/:id/rename updates the name",
+		renameRes.status === 200 &&
+			workspacesAfterRename.find((w: { id: string }) => w.id === created.workspace.id)
+				?.name === "renamed-workspace",
+	);
+
+	const renameEmptyRes = await app.request(`/api/workspaces/${created.workspace.id}/rename`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ name: "   " }),
+	});
+	check("POST /api/workspaces/:id/rename rejects an empty name", renameEmptyRes.status === 400);
 
 	// ---- status-gating regression: a stale binding must not outlive its PTY ----
 	// killAll() (used above) kills a PTY without waiting for node-pty's async
@@ -207,6 +339,33 @@ async function main() {
 		{ method: "DELETE" },
 	);
 	check("DELETE /api/workspaces/:id -> ok", deleteRes.status === 200);
+
+	// ---- orphaned worktrees (run-isolated.ts gives this process its own
+	// $HOME, so WORKTREES_ROOT here is a throwaway dir, never the real one) ----
+
+	const orphanWt = await addWorktree({
+		projectId: project.id,
+		repoPath: repo,
+		branch: "orphan-parent/orphan-test",
+	});
+	const listOrphansRes = await app.request("/api/orphaned-worktrees");
+	const orphansListed = await listOrphansRes.json();
+	check(
+		"GET /api/orphaned-worktrees finds the untracked worktree",
+		listOrphansRes.status === 200 &&
+			orphansListed.some((o: { path: string }) => o.path === orphanWt.worktreePath),
+	);
+
+	const cleanupOrphansRes = await app.request("/api/orphaned-worktrees/cleanup", {
+		method: "POST",
+	});
+	const cleanupOrphansResult = await cleanupOrphansRes.json();
+	check(
+		"POST /api/orphaned-worktrees/cleanup removes it",
+		cleanupOrphansRes.status === 200 &&
+			cleanupOrphansResult.removed >= 1 &&
+			!existsSync(orphanWt.worktreePath),
+	);
 
 	// ---- WS terminal bridge, over a REAL socket ----
 

@@ -18,6 +18,13 @@ export interface DiffSummary {
 }
 
 export type AgentStatus = "working" | "waiting" | "review" | "idle" | "starting" | "done";
+export type AgentType = "claude" | "gemini" | "codex";
+export type EditorType = "vscode" | "cursor" | "zed";
+
+export interface HostSettings {
+	defaultAgent: AgentType;
+	defaultEditor: EditorType;
+}
 
 export interface WorkspaceWithStatus {
 	id: string;
@@ -27,6 +34,7 @@ export interface WorkspaceWithStatus {
 	baseBranch: string | null;
 	name: string;
 	type: "main" | "worktree";
+	agentType: AgentType;
 	createdAt: number;
 	status: AgentStatus;
 	terminalId: string | null;
@@ -42,6 +50,7 @@ export interface CreateWorkspaceResult {
 		baseBranch: string | null;
 		name: string;
 		type: "main" | "worktree";
+		agentType: AgentType;
 		createdAt: number;
 	};
 	terminalId: string;
@@ -79,6 +88,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+	getSettings: () => request<HostSettings>("/settings"),
+	updateSettings: (patch: Partial<HostSettings>) =>
+		request<HostSettings>("/settings", {
+			method: "PUT",
+			body: JSON.stringify(patch),
+		}),
+
+	listOrphanedWorktrees: () =>
+		request<{ projectId: string; path: string }[]>("/orphaned-worktrees"),
+	cleanupOrphanedWorktrees: () =>
+		request<{ removed: number; failed: number; emptyDirsRemoved: number }>(
+			"/orphaned-worktrees/cleanup",
+			{ method: "POST" },
+		),
+
 	listProjects: () => request<Project[]>("/projects"),
 	addProject: (repoPath: string) =>
 		request<Project>("/projects", {
@@ -90,10 +114,10 @@ export const api = {
 
 	listWorkspaces: (projectId: string) =>
 		request<WorkspaceWithStatus[]>(`/projects/${projectId}/workspaces`),
-	createWorkspace: (projectId: string, prompt: string) =>
+	createWorkspace: (projectId: string, prompt: string, name?: string) =>
 		request<CreateWorkspaceResult>(`/projects/${projectId}/workspaces`, {
 			method: "POST",
-			body: JSON.stringify({ prompt }),
+			body: JSON.stringify({ prompt, name }),
 		}),
 	// Launches a fresh terminal in an EXISTING workspace whose previous one
 	// ended (no new worktree/branch) — resumes the prior Claude conversation
@@ -102,8 +126,13 @@ export const api = {
 		request<{ terminalId: string }>(`/workspaces/${id}/resume`, {
 			method: "POST",
 		}),
-	deleteWorkspace: (id: string, deleteBranch: boolean) =>
-		request<{ ok: true }>(`/workspaces/${id}?deleteBranch=${deleteBranch}`, {
+	renameWorkspace: (id: string, name: string) =>
+		request<{ ok: true }>(`/workspaces/${id}/rename`, {
+			method: "POST",
+			body: JSON.stringify({ name }),
+		}),
+	deleteWorkspace: (id: string, deleteBranch: boolean, force = false) =>
+		request<{ ok: true }>(`/workspaces/${id}?deleteBranch=${deleteBranch}&force=${force}`, {
 			method: "DELETE",
 		}),
 	getDiff: (id: string) => requestText(`/workspaces/${id}/diff`),

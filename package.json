@@ -11,9 +11,9 @@
     "server": "tsx src/server/index.ts",
     "web": "bun run --cwd web build && tsx src/server/index.ts",
     "web:dev": "tsx scripts/web-dev.ts",
-    "web:smoke": "tsx scripts/web-smoke.ts",
+    "web:smoke": "tsx scripts/run-isolated.ts scripts/web-smoke.ts",
     "db:generate": "drizzle-kit generate",
-    "smoke": "tsx scripts/smoke.ts",
+    "smoke": "tsx scripts/run-isolated.ts scripts/smoke.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

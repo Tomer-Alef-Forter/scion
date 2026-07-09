@@ -85,7 +85,7 @@ workspace.
 - **+ Add project** — type a repo path (`~` is expanded) and submit.
 - Click a project to select it; hover a project for a **✕** to remove it
   from the list (does not touch your repo).
-- Sun/moon icon in the header toggles dark mode.
+- Gear icon opens **Settings** (see §4.6); sun/moon icon toggles dark mode.
 
 ### 4.2 Workspaces (middle column)
 
@@ -94,9 +94,12 @@ diff summary (`+insertions`/`-deletions`/`N uncommitted`), and a relative
 timestamp. Click a card to open it — if its agent's session has ended,
 clicking **resumes** it (see §7) instead of dead-ending.
 
-**+ New** opens a modal — describe the task, submit, and Scion
-creates a worktree + branch and launches `claude` with your prompt, then
-jumps straight to its live terminal.
+**+ New** opens a modal — describe the task (optional — leave it blank to
+launch with no seed prompt) and an optional custom name, submit, and Scion
+creates a worktree + branch and launches whichever agent is set as default in
+**Settings** (§4.6), then jumps straight to its live terminal. That agent
+choice is captured onto the workspace at creation time — changing the
+default afterward doesn't affect it.
 
 ### 4.3 Detail panel — Terminal tab
 
@@ -106,7 +109,8 @@ Reconnects automatically (with backoff) if the connection drops, and replays
 scrollback so you don't lose context.
 
 Header buttons above the tabs: **Merge** (into base branch), **Open** (in
-VS Code), **Delete** (remove the worktree, keep the branch).
+whichever editor is set as default in Settings), **Delete** (remove the
+worktree, keep the branch).
 
 ### 4.4 Detail panel — Diff tab
 
@@ -121,7 +125,23 @@ A read-only file browser: a collapsible tree on the left (tracked files plus
 untracked-but-not-gitignored ones — the same files `git status` would show
 you), and a syntax-highlighted viewer on the right. Click any file to view
 it. This covers *every* file in the worktree, not just changed ones — so
-**Open** (VS Code) becomes a pure convenience rather than a necessity.
+**Open** becomes a pure convenience rather than a necessity.
+
+### 4.6 Settings
+
+Gear icon in the sidebar header opens a global preferences modal:
+
+- **Agent** — which CLI new workspaces launch: **Claude Code**, **Gemini
+  CLI**, or **Codex**. Only Claude Code reports live status via its
+  lifecycle hooks (§6) — the other two have no equivalent, so their
+  workspaces just show **working** for the life of the session instead of
+  distinguishing working/waiting/review.
+- **Editor** — what **Open** launches: **VS Code**, **Cursor**, or **Zed**.
+
+These are defaults for *new* workspaces only — each workspace keeps
+whatever agent it was created with, even if you change the default later
+(resuming a workspace relaunches the same agent it started with, not
+today's default).
 
 ---
 

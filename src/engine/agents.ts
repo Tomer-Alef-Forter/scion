@@ -1,15 +1,11 @@
-// Assembles + launches the Claude Code agent in a worktree PTY.
-// Adapted from superset builtin-terminal-agents.ts (the "claude" definition)
-// and agents.ts (buildAgentCommandString). Because we spawn the binary
-// directly (no intermediate shell), there's no shell quoting — the prompt is
-// passed as a plain argv positional (superset's "argv" transport).
+// Assembles + launches the coding-agent CLI in a worktree PTY. Claude Code
+// support adapted from superset builtin-terminal-agents.ts (the "claude"
+// definition) and agents.ts (buildAgentCommandString). Because we spawn the
+// binary directly (no intermediate shell), there's no shell quoting — the
+// prompt is passed as a plain argv positional (superset's "argv" transport).
 import { randomUUID } from "node:crypto";
+import type { AgentType } from "../db/schema.ts";
 import { spawnSession } from "./pty.ts";
-
-// From superset packages/shared/src/builtin-terminal-agents.ts:
-//   { id: "claude", command: "claude --dangerously-skip-permissions" }
-const CLAUDE_FILE = "claude";
-const CLAUDE_ARGS = ["--dangerously-skip-permissions"];
 
 /**
  * Sanitize a prompt destined for the agent. Copied from superset
@@ -30,36 +26,87 @@ export function sanitizePrompt(prompt: string): string {
 	);
 }
 
+interface AgentArgvArgs {
+	prompt?: string;
+	resumeSessionId?: string | null;
+}
+
+interface AgentConfig {
+	file: string;
+	buildArgv(args: AgentArgvArgs): string[];
+}
+
+// Every agent skips its own interactive approval prompts, the same way
+// Claude Code's --dangerously-skip-permissions does — the worktree is the
+// safety boundary here (see docs), not per-action confirmation, so an
+// unattended agent can actually make progress instead of blocking on stdin
+// nobody's watching.
+const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
+	// From superset packages/shared/src/builtin-terminal-agents.ts:
+	//   { id: "claude", command: "claude --dangerously-skip-permissions" }
+	claude: {
+		file: "claude",
+		buildArgv({ prompt, resumeSessionId }) {
+			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
+			const resumeArgs = resumeSessionId ? ["--resume", resumeSessionId] : [];
+			const base = ["--dangerously-skip-permissions", ...resumeArgs];
+			return cleanPrompt ? [...base, cleanPrompt] : base;
+		},
+	},
+	// Gemini CLI: `--yolo` auto-approves every action; `-i <prompt>` seeds an
+	// interactive session with a prompt instead of exiting after one turn.
+	// No hook/session-id system to resume from, so resumeSessionId is unused.
+	// NOTE: flags are best-effort from Gemini CLI docs, not verified against a
+	// live install here — check `gemini --help` if a launch fails.
+	gemini: {
+		file: "gemini",
+		buildArgv({ prompt }) {
+			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
+			const base = ["--yolo"];
+			return cleanPrompt ? [...base, "-i", cleanPrompt] : base;
+		},
+	},
+	// Codex CLI: `--dangerously-bypass-approvals-and-sandbox` skips both
+	// approval prompts and Codex's own sandbox (again, the worktree already
+	// isolates it). No resume support here either.
+	// NOTE: flags are best-effort from Codex CLI docs, not verified against a
+	// live install here — check `codex --help` if a launch fails.
+	codex: {
+		file: "codex",
+		buildArgv({ prompt }) {
+			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
+			const base = ["--dangerously-bypass-approvals-and-sandbox"];
+			return cleanPrompt ? [...base, cleanPrompt] : base;
+		},
+	},
+};
+
+/**
+ * Builds the argv for launching a given agent CLI. Exported (pure, no spawn)
+ * so each agent's flag handling is unit-testable without spawning the real
+ * binary.
+ */
+export function buildAgentArgv(agentType: AgentType, args: AgentArgvArgs): string[] {
+	return AGENT_CONFIGS[agentType].buildArgv(args);
+}
+
+export function buildClaudeArgv(args: AgentArgvArgs): string[] {
+	return buildAgentArgv("claude", args);
+}
+
 export interface LaunchResult {
 	terminalId: string;
 }
 
 /**
- * Builds the argv for launching claude. Exported (pure, no spawn) so its
- * behavior — notably `--resume <id>` — is unit-testable without spawning the
- * real binary.
+ * Launch the given agent CLI in the worktree. When `resumeSessionId` is set
+ * (a prior Claude session_id captured from the lifecycle hook — see
+ * engine/status.ts `agentSessionId`), Claude Code resumes that conversation
+ * with `--resume <id>` instead of starting fresh; other agents ignore it (no
+ * equivalent hook system to have captured a session id from).
  */
-export function buildClaudeArgv(args: {
-	prompt?: string;
-	resumeSessionId?: string | null;
-}): string[] {
-	const prompt = args.prompt ? sanitizePrompt(args.prompt).trim() : "";
-	const resumeArgs = args.resumeSessionId
-		? ["--resume", args.resumeSessionId]
-		: [];
-	return prompt
-		? [...CLAUDE_ARGS, ...resumeArgs, prompt]
-		: [...CLAUDE_ARGS, ...resumeArgs];
-}
-
-/**
- * Launch `claude --dangerously-skip-permissions [prompt]` in the worktree.
- * When `resumeSessionId` is set (a prior Claude session_id captured from the
- * lifecycle hook — see engine/status.ts `agentSessionId`), resumes that
- * conversation with `--resume <id>` instead of starting a fresh one — used
- * when reconnecting to a workspace whose terminal has ended.
- */
-export function launchClaude(args: {
+export function launchAgent(args: {
+	agentType: AgentType;
 	workspaceId: string;
 	worktreePath: string;
 	prompt?: string;
@@ -68,12 +115,13 @@ export function launchClaude(args: {
 	rows?: number;
 }): LaunchResult {
 	const terminalId = randomUUID();
-	const argv = buildClaudeArgv(args);
+	const config = AGENT_CONFIGS[args.agentType];
+	const argv = config.buildArgv(args);
 
 	spawnSession({
 		id: terminalId,
 		workspaceId: args.workspaceId,
-		file: CLAUDE_FILE,
+		file: config.file,
 		args: argv,
 		cwd: args.worktreePath,
 		cols: args.cols,

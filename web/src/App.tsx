@@ -3,14 +3,17 @@
 // not polled); a slower fallback tick keeps diff summaries fresh since git
 // state changes aren't pushed. New-workspace flow is a real modal.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "./components/ConfirmDialog/ConfirmDialog";
 import { DiffPane } from "./components/DiffPane/DiffPane";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
 import { FilesPane } from "./components/FileBrowser/FilesPane";
 import { NewWorkspaceModal } from "./components/NewWorkspaceModal/NewWorkspaceModal";
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar";
+import { SettingsModal } from "./components/SettingsModal/SettingsModal";
 import { WebTerminal } from "./components/WebTerminal";
+import { WorkspaceContextMenu } from "./components/WorkspaceGrid/WorkspaceContextMenu";
 import { WorkspaceGrid } from "./components/WorkspaceGrid/WorkspaceGrid";
-import { api, type Project, type WorkspaceWithStatus } from "./lib/api";
+import { api, type HostSettings, type Project, type WorkspaceWithStatus } from "./lib/api";
 import { subscribeToStatusEvents } from "./lib/eventsSocket";
 import { cn } from "./lib/utils";
 
@@ -39,13 +42,61 @@ export function App() {
 	const [modalError, setModalError] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [actionMessage, setActionMessage] = useState<string | null>(null);
+	const [contextMenu, setContextMenu] = useState<{
+		workspace: WorkspaceWithStatus;
+		x: number;
+		y: number;
+	} | null>(null);
+	const [settings, setSettings] = useState<HostSettings | null>(null);
+	const [showSettingsModal, setShowSettingsModal] = useState(false);
+	const [settingsError, setSettingsError] = useState<string | null>(null);
+	const [confirmAction, setConfirmAction] = useState<{
+		type: "merge" | "delete";
+		workspace: WorkspaceWithStatus;
+	} | null>(null);
+	const [orphanCount, setOrphanCount] = useState<number | null>(null);
+	const [showOrphanConfirm, setShowOrphanConfirm] = useState(false);
 
 	const selectedProjectIdRef = useRef(selectedProjectId);
 	selectedProjectIdRef.current = selectedProjectId;
 
 	useEffect(() => {
 		api.listProjects().then(setProjects).catch((e) => setError(String(e)));
+		api.getSettings().then(setSettings).catch((e) => setError(String(e)));
 	}, []);
+
+	async function handleSaveSettings(patch: Partial<HostSettings>) {
+		setBusy(true);
+		setSettingsError(null);
+		try {
+			const updated = await api.updateSettings(patch);
+			setSettings(updated);
+			setShowSettingsModal(false);
+		} catch (e) {
+			setSettingsError(String(e));
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	async function handleCleanupOrphans() {
+		setBusy(true);
+		setShowOrphanConfirm(false);
+		try {
+			const result = await api.cleanupOrphanedWorktrees();
+			setSettingsError(
+				result.failed > 0
+					? `Removed ${result.removed}, ${result.failed} failed (check they aren't in use).`
+					: null,
+			);
+			const orphans = await api.listOrphanedWorktrees();
+			setOrphanCount(orphans.length);
+		} catch (e) {
+			setSettingsError(String(e));
+		} finally {
+			setBusy(false);
+		}
+	}
 
 	const refreshWorkspaces = useCallback((projectId: string) => {
 		return api
@@ -101,17 +152,25 @@ export function App() {
 		}
 	}
 
-	async function handleCreateWorkspace(prompt: string) {
+	async function handleCreateWorkspace(prompt: string, name?: string) {
 		if (!selectedProjectId) return;
 		setBusy(true);
 		setModalError(null);
 		try {
-			const result = await api.createWorkspace(selectedProjectId, prompt);
+			const result = await api.createWorkspace(selectedProjectId, prompt, name);
 			setShowNewWorkspaceModal(false);
-			await refreshWorkspaces(selectedProjectId);
+			// Show it immediately — the create response already has everything
+			// needed. Don't block on a full workspace-list refetch (which
+			// recomputes a git diff summary for every OTHER workspace too);
+			// that runs in the background instead and just backfills status/diff.
+			setWorkspaces((prev) => [
+				...prev,
+				{ ...result.workspace, status: "starting", terminalId: result.terminalId, diff: null },
+			]);
 			setSelectedWorkspaceId(result.workspace.id);
 			setActiveTab("terminal");
 			setOpenTerminal({ workspaceId: result.workspace.id, terminalId: result.terminalId });
+			refreshWorkspaces(selectedProjectId);
 		} catch (e) {
 			setModalError(String(e));
 		} finally {
@@ -137,6 +196,18 @@ export function App() {
 			if (selectedProjectId) refreshWorkspaces(selectedProjectId);
 		} catch (e) {
 			setError(String(e));
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	async function handleRename(ws: WorkspaceWithStatus, name: string) {
+		setBusy(true);
+		try {
+			await api.renameWorkspace(ws.id, name);
+			if (selectedProjectId) await refreshWorkspaces(selectedProjectId);
+		} catch (e) {
+			setActionMessage(`Rename failed: ${e instanceof Error ? e.message : e}`);
 		} finally {
 			setBusy(false);
 		}
@@ -171,7 +242,9 @@ export function App() {
 	async function handleDelete(ws: WorkspaceWithStatus) {
 		setBusy(true);
 		try {
-			await api.deleteWorkspace(ws.id, false);
+			// Confirming the dialog IS the "yes, even with uncommitted changes"
+			// signal — the warning was already shown there.
+			await api.deleteWorkspace(ws.id, false, true);
 			if (selectedWorkspaceId === ws.id) {
 				setSelectedWorkspaceId(null);
 				setOpenTerminal(null);
@@ -182,6 +255,22 @@ export function App() {
 		} finally {
 			setBusy(false);
 		}
+	}
+
+	function requestMerge(ws: WorkspaceWithStatus) {
+		setConfirmAction({ type: "merge", workspace: ws });
+	}
+
+	function requestDelete(ws: WorkspaceWithStatus) {
+		setConfirmAction({ type: "delete", workspace: ws });
+	}
+
+	async function handleConfirmAction() {
+		if (!confirmAction) return;
+		const { type, workspace } = confirmAction;
+		setConfirmAction(null);
+		if (type === "merge") await handleMerge(workspace);
+		else await handleDelete(workspace);
 	}
 
 	const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
@@ -199,6 +288,15 @@ export function App() {
 				}}
 				onAdd={handleAddProject}
 				onRemove={handleRemoveProject}
+				onOpenSettings={() => {
+					setSettingsError(null);
+					setShowSettingsModal(true);
+					setOrphanCount(null);
+					api
+						.listOrphanedWorktrees()
+						.then((orphans) => setOrphanCount(orphans.length))
+						.catch(() => setOrphanCount(0));
+				}}
 				busy={busy}
 			/>
 
@@ -211,6 +309,10 @@ export function App() {
 						onNew={() => {
 							setModalError(null);
 							setShowNewWorkspaceModal(true);
+						}}
+						onContextMenu={(workspace, e) => {
+							e.preventDefault();
+							setContextMenu({ workspace, x: e.clientX, y: e.clientY });
 						}}
 					/>
 
@@ -230,7 +332,7 @@ export function App() {
 										<button
 											type="button"
 											disabled={busy}
-											onClick={() => handleMerge(selectedWorkspace)}
+											onClick={() => requestMerge(selectedWorkspace)}
 											className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
 										>
 											Merge
@@ -246,7 +348,7 @@ export function App() {
 										<button
 											type="button"
 											disabled={busy}
-											onClick={() => handleDelete(selectedWorkspace)}
+											onClick={() => requestDelete(selectedWorkspace)}
 											className="rounded-md border border-border px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
 										>
 											Delete
@@ -328,6 +430,74 @@ export function App() {
 					error={modalError}
 					onCreate={handleCreateWorkspace}
 					onClose={() => setShowNewWorkspaceModal(false)}
+				/>
+			)}
+
+			{contextMenu && (
+				<WorkspaceContextMenu
+					x={contextMenu.x}
+					y={contextMenu.y}
+					workspaceName={contextMenu.workspace.name}
+					busy={busy}
+					onClose={() => setContextMenu(null)}
+					onRename={(name) => handleRename(contextMenu.workspace, name)}
+					onMerge={() => requestMerge(contextMenu.workspace)}
+					onOpen={() => handleOpen(contextMenu.workspace)}
+					onDelete={() => requestDelete(contextMenu.workspace)}
+				/>
+			)}
+
+			{showSettingsModal && settings && (
+				<SettingsModal
+					settings={settings}
+					busy={busy}
+					error={settingsError}
+					orphanCount={orphanCount}
+					onSave={handleSaveSettings}
+					onCleanupOrphans={() => setShowOrphanConfirm(true)}
+					onClose={() => setShowSettingsModal(false)}
+				/>
+			)}
+
+			{showOrphanConfirm && (
+				<ConfirmDialog
+					title="Clean up orphaned worktrees?"
+					message={`Remove ${orphanCount} orphaned worktree${orphanCount === 1 ? "" : "s"} from disk? Each still-registered project's worktree is deregistered with git (branch kept); any with no project left is deleted outright.`}
+					confirmLabel="Clean up"
+					destructive
+					busy={busy}
+					onConfirm={handleCleanupOrphans}
+					onCancel={() => setShowOrphanConfirm(false)}
+				/>
+			)}
+
+			{confirmAction?.type === "merge" && (
+				<ConfirmDialog
+					title="Merge workspace?"
+					message={`Merge "${confirmAction.workspace.branch}" into ${
+						confirmAction.workspace.baseBranch ?? "its base branch"
+					}?`}
+					confirmLabel="Merge"
+					busy={busy}
+					onConfirm={handleConfirmAction}
+					onCancel={() => setConfirmAction(null)}
+				/>
+			)}
+
+			{confirmAction?.type === "delete" && (
+				<ConfirmDialog
+					title="Delete workspace?"
+					message={`Remove the worktree for "${confirmAction.workspace.name}". The branch is kept.`}
+					warning={
+						confirmAction.workspace.diff && confirmAction.workspace.diff.uncommitted > 0
+							? `This worktree has ${confirmAction.workspace.diff.uncommitted} uncommitted change(s) that will be permanently lost.`
+							: undefined
+					}
+					confirmLabel="Delete"
+					destructive
+					busy={busy}
+					onConfirm={handleConfirmAction}
+					onCancel={() => setConfirmAction(null)}
 				/>
 			)}
 		</div>

@@ -3,7 +3,7 @@
 //   workspace-creation/shared/worktree-paths.ts,
 //   workspace-cleanup/workspace-cleanup.ts (removal).
 // Cloud registration + DB writes stripped — callers persist rows themselves.
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmdirSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { WORKTREES_ROOT } from "../config.ts";
 import { createUserSimpleGit } from "./gitClient.ts";
@@ -96,7 +96,13 @@ export async function addWorktree(args: {
 	// Free branches still claimed by registrations whose dirs are gone.
 	await git.raw(["worktree", "prune"]).catch(() => {});
 
+	// checkout.workers=0 parallelizes the worktree's initial file checkout
+	// across CPU cores — a large repo's `worktree add` is otherwise
+	// single-threaded and dominates workspace-creation latency (measured
+	// ~2.5x faster on a 28GB/13k-file repo).
 	await git.raw([
+		"-c",
+		"checkout.workers=0",
 		"worktree",
 		"add",
 		"--no-track",
@@ -114,6 +120,26 @@ export async function addWorktree(args: {
 	return { worktreePath, branch: args.branch, baseBranch };
 }
 
+/**
+ * Remove any now-empty directories between `worktreePath` and its
+ * `<projectId>` container — a slash in the branch name (e.g. "feat/smoke")
+ * means `worktreePath` is nested a level deeper than `mkdirSync` in
+ * addWorktree created, and `git worktree remove` only deletes the leaf,
+ * leaving empty intermediate dirs behind otherwise.
+ */
+function pruneEmptyParents(worktreePath: string): void {
+	const projectDir = dirname(dirname(worktreePath)); // one level ABOVE <projectId> is never touched
+	let dir = dirname(worktreePath);
+	while (dir !== projectDir && dir.length > projectDir.length) {
+		try {
+			rmdirSync(dir);
+		} catch {
+			break; // not empty (or already gone) — stop walking up
+		}
+		dir = dirname(dir);
+	}
+}
+
 /** Remove a worktree: `git worktree remove --force --force` then prune. */
 export async function removeWorktree(args: {
 	repoPath: string;
@@ -125,6 +151,7 @@ export async function removeWorktree(args: {
 		.raw(["worktree", "remove", "--force", "--force", args.worktreePath])
 		.catch(() => {});
 	await git.raw(["worktree", "prune"]).catch(() => {});
+	pruneEmptyParents(args.worktreePath);
 	if (args.deleteBranch) {
 		await git.raw(["branch", "-D", args.deleteBranch]).catch(() => {});
 	}

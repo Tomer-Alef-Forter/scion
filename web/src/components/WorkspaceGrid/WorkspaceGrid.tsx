@@ -6,6 +6,7 @@ interface WorkspaceGridProps {
 	selectedWorkspaceId: string | null;
 	onSelect: (workspace: WorkspaceWithStatus) => void;
 	onNew: () => void;
+	onContextMenu: (workspace: WorkspaceWithStatus, e: React.MouseEvent) => void;
 }
 
 export function WorkspaceGrid({
@@ -13,6 +14,7 @@ export function WorkspaceGrid({
 	selectedWorkspaceId,
 	onSelect,
 	onNew,
+	onContextMenu,
 }: WorkspaceGridProps) {
 	return (
 		<div className="flex h-full w-80 shrink-0 flex-col border-r border-border">
@@ -34,6 +36,7 @@ export function WorkspaceGrid({
 								workspace={ws}
 								selected={ws.id === selectedWorkspaceId}
 								onClick={() => onSelect(ws)}
+								onContextMenu={(e) => onContextMenu(ws, e)}
 							/>
 						</li>
 					))}

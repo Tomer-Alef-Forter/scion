@@ -4,6 +4,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "./schema.ts";
@@ -29,6 +30,17 @@ export function createDb(dbPath: string) {
 		console.error("[db] migration failed:", error);
 		throw error;
 	}
+
+	// PTYs never survive a restart (no background daemon), so any session row
+	// still marked "active" from a previous run is definitionally dead the
+	// moment we boot — fix the bookkeeping now rather than leaving the DB
+	// claiming a live process that no longer exists. `terminal_agent_bindings`
+	// are left untouched: resumeWorkspace still needs their captured
+	// agentSessionId to `--resume` the same conversation later.
+	db.update(schema.terminalSessions)
+		.set({ status: "ended", endedAt: Date.now() })
+		.where(eq(schema.terminalSessions.status, "active"))
+		.run();
 
 	return db;
 }
