@@ -3,6 +3,7 @@
 // See NOTICE.md. Status icon swapped for the lifted StatusIndicator (live
 // agent status instead of a static completed/running/failed enum); data
 // source is our real WorkspaceWithStatus instead of MockSession.
+import { memo } from "react";
 import { StatusIndicator } from "../StatusIndicator/StatusIndicator";
 import type { WorkspaceWithStatus } from "../../lib/api";
 import { cn } from "../../lib/utils";
@@ -32,7 +33,7 @@ interface WorkspaceCardProps {
 	onContextMenu: (e: React.MouseEvent) => void;
 }
 
-export function WorkspaceCard({
+function WorkspaceCardImpl({
 	workspace,
 	selected,
 	onClick,
@@ -80,3 +81,15 @@ export function WorkspaceCard({
 		</button>
 	);
 }
+
+// The parent list re-renders on every status/diff refresh, and its inline
+// onClick/onContextMenu closures are recreated each time regardless — so the
+// default shallow-prop comparator would never skip a re-render. Compare only
+// `workspace` (by reference — App patches a single workspace immutably, so
+// unrelated rows keep the SAME object) and `selected`; a fresh onClick
+// closure still calls through correctly even when the card itself doesn't
+// re-render, so ignoring its identity here is safe.
+export const WorkspaceCard = memo(
+	WorkspaceCardImpl,
+	(prev, next) => prev.workspace === next.workspace && prev.selected === next.selected,
+);

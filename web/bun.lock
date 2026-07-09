@@ -7,6 +7,7 @@
       "dependencies": {
         "@pierre/diffs": "1.2.2",
         "@xterm/addon-fit": "0.12.0-beta.220",
+        "@xterm/addon-webgl": "0.20.0-beta.220",
         "@xterm/xterm": "6.1.0-beta.220",
         "class-variance-authority": "0.7.1",
         "clsx": "2.1.1",
@@ -255,6 +256,8 @@
     "@vitejs/plugin-react": ["@vitejs/plugin-react@5.2.0", "", { "dependencies": { "@babel/core": "^7.29.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-rc.3", "@types/babel__core": "^7.20.5", "react-refresh": "^0.18.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0" } }, "sha512-YmKkfhOAi3wsB1PhJq5Scj3GXMn3WvtQ/JC0xoopuHoXSdmtdStOpFrYaT1kie2YgFBcIe64ROzMYRjCrYOdYw=="],
 
     "@xterm/addon-fit": ["@xterm/addon-fit@0.12.0-beta.220", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.220" } }, "sha512-lTiEjsdJBYTvIdA8USs90j+pu7/9oCQEh8JYBDJoRxzzAcvk4V1GlEA++Ztspbfk4nSh2HVxwJvdeTD6ffAQlg=="],
+
+    "@xterm/addon-webgl": ["@xterm/addon-webgl@0.20.0-beta.220", "", { "peerDependencies": { "@xterm/xterm": "^6.1.0-beta.221" } }, "sha512-4Lpj2LC+Cutm2VuKHHHQyQFWYg0JVwhh81bZcgKQJpQmVHkzOCxK29uvbdte2P9Yaq6xRPuLTB64qr+GVaEwjQ=="],
 
     "@xterm/xterm": ["@xterm/xterm@6.1.0-beta.220", "", {}, "sha512-rwEKE75wfwfNWeGnjl0iQRA1W50HigKoGcGMeF3o5CqDSdI9IjmwzpV9xHXqLH6CYj6s9N1g6bbKFVDou9dJ/A=="],
 

@@ -209,6 +209,19 @@ async function main() {
 	const diffRes = await app.request(`/api/workspaces/${created.workspace.id}/diff`);
 	check("GET /api/workspaces/:id/diff -> 200", diffRes.status === 200);
 
+	const singleWsRes = await app.request(`/api/workspaces/${created.workspace.id}`);
+	const singleWs = await singleWsRes.json();
+	check(
+		"GET /api/workspaces/:id returns the same enriched shape as the list route",
+		singleWsRes.status === 200 &&
+			singleWs.id === created.workspace.id &&
+			singleWs.diff !== undefined &&
+			typeof singleWs.status === "string",
+	);
+
+	const missingWsRes = await app.request(`/api/workspaces/does-not-exist`);
+	check("GET /api/workspaces/:id -> 404 for an unknown id", missingWsRes.status === 404);
+
 	const treeRes = await app.request(`/api/workspaces/${created.workspace.id}/tree`);
 	const tree = await treeRes.json();
 	check(

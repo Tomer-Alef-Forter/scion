@@ -4,6 +4,7 @@
 // not needed for a local desktop tool); everything else — xterm setup, theme,
 // fit/resize handling, connection wiring — is unchanged.
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import type { ITheme } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -63,12 +64,46 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 			fontFamily: TERMINAL_FONT_FAMILY,
 			fontSize: 14,
 			scrollback: 5000,
+			// Scroll tuning. scrollSensitivity is a direct, uncapped multiplier
+			// on scroll-pixels-per-trackpad-pixel (trackpad gestures bypass
+			// animation entirely, so this is the only speed knob for that
+			// path) — pushed very high (8x the prior 24/60 tuning) per request.
+			// NOTE: past a point this trades control for speed — a tiny
+			// gesture can blow through most of the scrollback. If it overshoots
+			// or feels twitchy, say so and we'll dial back rather than revert
+			// to nothing. smoothScrollDuration only affects real physical
+			// mouse-wheel input (trackpad is already instant), left at the
+			// sane-range ceiling.
+			smoothScrollDuration: 150,
+			scrollSensitivity: 192,
+			fastScrollSensitivity: 480,
 			theme: TERMINAL_THEME,
 			allowProposedApi: true,
 		});
 		const fitAddon = new FitAddon();
 		terminal.loadAddon(fitAddon);
 		terminal.open(container);
+
+		// GPU-accelerated rendering. This is the single biggest fluidity win for
+		// busy sessions (streaming agent output) — it pushes glyph rasterization
+		// to the GPU instead of the DOM/canvas2d renderer. Must load AFTER
+		// terminal.open() so a rendering surface exists. If the browser can't
+		// give us a WebGL context (or loses it later — GPU reset, tab
+		// backgrounding on some drivers), we dispose the addon and xterm falls
+		// back to its default DOM renderer automatically.
+		let webglAddon: WebglAddon | null = null;
+		try {
+			webglAddon = new WebglAddon();
+			webglAddon.onContextLoss(() => {
+				webglAddon?.dispose();
+				webglAddon = null;
+			});
+			terminal.loadAddon(webglAddon);
+		} catch {
+			// WebGL unavailable (headless, blocklisted GPU, etc.) — DOM renderer.
+			webglAddon = null;
+		}
+
 		try {
 			fitAddon.fit();
 		} catch {
@@ -140,6 +175,7 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 			visualViewport?.removeEventListener("scroll", refit);
 			connection.dispose();
 			connectionRef.current = null;
+			webglAddon?.dispose();
 			terminal.dispose();
 		};
 	}, [workspaceId, terminalId]);

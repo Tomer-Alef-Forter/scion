@@ -2,11 +2,9 @@
 // actions) for the selected workspace. Live status via /ws/events (pushed,
 // not polled); a slower fallback tick keeps diff summaries fresh since git
 // state changes aren't pushed. New-workspace flow is a real modal.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "./components/ConfirmDialog/ConfirmDialog";
-import { DiffPane } from "./components/DiffPane/DiffPane";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
-import { FilesPane } from "./components/FileBrowser/FilesPane";
 import { NewWorkspaceModal } from "./components/NewWorkspaceModal/NewWorkspaceModal";
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal";
@@ -17,7 +15,21 @@ import { api, type HostSettings, type Project, type WorkspaceWithStatus } from "
 import { subscribeToStatusEvents } from "./lib/eventsSocket";
 import { cn } from "./lib/utils";
 
-const DIFF_REFRESH_INTERVAL_MS = 5000;
+// Code-split: @pierre/diffs (diff rendering) and the file browser/viewer
+// (incl. shiki highlighting) are sizeable and only needed once a user opens
+// those tabs — no reason to ship them in the initial bundle/paint.
+const DiffPane = lazy(() =>
+	import("./components/DiffPane/DiffPane").then((m) => ({ default: m.DiffPane })),
+);
+const FilesPane = lazy(() =>
+	import("./components/FileBrowser/FilesPane").then((m) => ({ default: m.FilesPane })),
+);
+
+// Fallback poll for diff summaries (git state isn't pushed like status is).
+// Status changes are handled surgically via /ws/events + a single-workspace
+// refetch instead — see the event subscription below — so this interval only
+// governs how quickly MANUAL out-of-worktree edits show up in the sidebar.
+const DIFF_REFRESH_INTERVAL_MS = 8000;
 
 type DetailTab = "terminal" | "diff" | "files";
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
@@ -107,6 +119,17 @@ export function App() {
 			.catch((e) => setError(String(e)));
 	}, []);
 
+	// Patches ONE workspace in place (same array, only that item's reference
+	// changes) instead of replacing the whole list — so WorkspaceCard's memo
+	// skips re-rendering every other card, and no diff summary is recomputed
+	// for workspaces that didn't change.
+	const applyWorkspaceUpdate = useCallback((updated: WorkspaceWithStatus) => {
+		setWorkspaces((prev) => {
+			if (!prev.some((w) => w.id === updated.id)) return prev;
+			return prev.map((w) => (w.id === updated.id ? updated : w));
+		});
+	}, []);
+
 	useEffect(() => {
 		if (!selectedProjectId) {
 			setWorkspaces([]);
@@ -114,9 +137,16 @@ export function App() {
 		}
 		refreshWorkspaces(selectedProjectId);
 
-		// Live: refetch the instant an agent's status changes.
-		const unsubscribe = subscribeToStatusEvents(() => {
-			refreshWorkspaces(selectedProjectId);
+		// Live: an agent status change names exactly one workspace — refetch
+		// just that one instead of recomputing every workspace's diff summary.
+		const unsubscribe = subscribeToStatusEvents((workspaceId) => {
+			api
+				.getWorkspace(workspaceId)
+				.then(applyWorkspaceUpdate)
+				.catch(() => {
+					// Benign race (e.g. workspace deleted concurrently) — the
+					// periodic poll below will reconcile either way.
+				});
 		});
 		// Fallback: diff summaries (git state) aren't pushed — poll slowly.
 		const id = setInterval(() => refreshWorkspaces(selectedProjectId), DIFF_REFRESH_INTERVAL_MS);
@@ -124,7 +154,7 @@ export function App() {
 			unsubscribe();
 			clearInterval(id);
 		};
-	}, [selectedProjectId, refreshWorkspaces]);
+	}, [selectedProjectId, refreshWorkspaces, applyWorkspaceUpdate]);
 
 	async function handleAddProject(repoPath: string) {
 		setBusy(true);
@@ -390,8 +420,24 @@ export function App() {
 													{busy ? "Resuming…" : "No active terminal."}
 												</div>
 											))}
-										{activeTab === "diff" && <DiffPane workspaceId={selectedWorkspace.id} />}
-										{activeTab === "files" && <FilesPane workspaceId={selectedWorkspace.id} />}
+										{activeTab === "diff" && (
+											<Suspense
+												fallback={
+													<div className="p-4 text-sm text-muted-foreground">Loading…</div>
+												}
+											>
+												<DiffPane workspaceId={selectedWorkspace.id} />
+											</Suspense>
+										)}
+										{activeTab === "files" && (
+											<Suspense
+												fallback={
+													<div className="p-4 text-sm text-muted-foreground">Loading…</div>
+												}
+											>
+												<FilesPane workspaceId={selectedWorkspace.id} />
+											</Suspense>
+										)}
 									</ErrorBoundary>
 								</div>
 							</>

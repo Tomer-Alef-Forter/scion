@@ -2,7 +2,7 @@
 // TUI uses — no new business logic, just JSON in/out.
 import { homedir } from "node:os";
 import { Hono } from "hono";
-import type { AgentType, EditorType } from "../db/schema.ts";
+import type { AgentType, EditorType, Project, Workspace } from "../db/schema.ts";
 import { getCachedDiffSummary, getUnifiedDiff, invalidateDiffCache } from "../engine/diff.ts";
 import { listFiles, readWorktreeFile } from "../engine/files.ts";
 import { mergeBack } from "../engine/mergeBack.ts";
@@ -33,6 +33,46 @@ function resolveWorkspace(store: Store, workspaceId: string) {
 	const project = store.getProject(workspace.projectId);
 	if (!project) return null;
 	return { workspace, project };
+}
+
+// Shared by the list route and the single-workspace route so a status-change
+// event (which names exactly one workspace) can be re-enriched WITHOUT
+// re-running getCachedDiffSummary — and thus a real `git` subprocess pair —
+// for every other workspace in the project.
+async function enrichWorkspace(
+	status: StatusStore,
+	project: Project,
+	workspace: Workspace,
+) {
+	const liveSessions = listSessions(workspace.id).filter((s) => !s.exited);
+	const diff = await getCachedDiffSummary(
+		project.repoPath,
+		workspace.worktreePath,
+	).catch(() => null);
+	// A binding row can outlive its process — killAll() calls session.kill()
+	// but the app then exits before node-pty's async onExit (which would
+	// normally call status.markExited) has a chance to fire, leaving a stale
+	// row. Gate on a LIVE session so a dead workspace always reports "done",
+	// never a stale status.
+	let derivedStatus: string;
+	if (liveSessions.length === 0) {
+		derivedStatus = "done";
+	} else if (workspace.agentType !== "claude") {
+		// Only Claude Code reports lifecycle events via hooks — other agents
+		// have no equivalent, so there's no way to distinguish
+		// working/waiting/review for them. Best effort: just "working" for
+		// the life of the session.
+		derivedStatus = "working";
+	} else {
+		const bindings = status.listByWorkspace(workspace.id);
+		derivedStatus = bindings[0]?.status ?? "starting";
+	}
+	return {
+		...workspace,
+		status: derivedStatus,
+		terminalId: liveSessions[0]?.id ?? null,
+		diff,
+	};
 }
 
 export function createApiRoutes({ store, status }: ApiDeps): Hono {
@@ -95,40 +135,20 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 		if (!project) return c.json({ error: "Project not found" }, 404);
 
 		const enriched = await Promise.all(
-			store.listWorkspaces(projectId).map(async (workspace) => {
-				const liveSessions = listSessions(workspace.id).filter(
-					(s) => !s.exited,
-				);
-				const diff = await getCachedDiffSummary(
-					project.repoPath,
-					workspace.worktreePath,
-				).catch(() => null);
-				// A binding row can outlive its process — killAll() calls
-				// session.kill() but the app then exits before node-pty's async
-				// onExit (which would normally call status.markExited) has a
-				// chance to fire, leaving a stale row. Gate on a LIVE session so
-				// a dead workspace always reports "done", never a stale status.
-				let derivedStatus: string;
-				if (liveSessions.length === 0) {
-					derivedStatus = "done";
-				} else if (workspace.agentType !== "claude") {
-					// Only Claude Code reports lifecycle events via hooks — other
-					// agents have no equivalent, so there's no way to distinguish
-					// working/waiting/review for them. Best effort: just "working"
-					// for the life of the session.
-					derivedStatus = "working";
-				} else {
-					const bindings = status.listByWorkspace(workspace.id);
-					derivedStatus = bindings[0]?.status ?? "starting";
-				}
-				return {
-					...workspace,
-					status: derivedStatus,
-					terminalId: liveSessions[0]?.id ?? null,
-					diff,
-				};
-			}),
+			store
+				.listWorkspaces(projectId)
+				.map((workspace) => enrichWorkspace(status, project, workspace)),
 		);
+		return c.json(enriched);
+	});
+
+	// Single-workspace fetch — used by the client to refresh just the one
+	// workspace named in a status-change event, instead of the whole list
+	// (and thus instead of a diff recompute for every OTHER workspace too).
+	api.get("/workspaces/:id", async (c) => {
+		const resolved = resolveWorkspace(store, c.req.param("id"));
+		if (!resolved) return c.json({ error: "Workspace not found" }, 404);
+		const enriched = await enrichWorkspace(status, resolved.project, resolved.workspace);
 		return c.json(enriched);
 	});
 

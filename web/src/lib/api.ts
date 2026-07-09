@@ -114,6 +114,10 @@ export const api = {
 
 	listWorkspaces: (projectId: string) =>
 		request<WorkspaceWithStatus[]>(`/projects/${projectId}/workspaces`),
+	// Re-fetches just ONE workspace's enriched row (status/diff/terminalId) —
+	// used to apply a status-change event without recomputing a diff summary
+	// for every other workspace in the project.
+	getWorkspace: (id: string) => request<WorkspaceWithStatus>(`/workspaces/${id}`),
 	createWorkspace: (projectId: string, prompt: string, name?: string) =>
 		request<CreateWorkspaceResult>(`/projects/${projectId}/workspaces`, {
 			method: "POST",
