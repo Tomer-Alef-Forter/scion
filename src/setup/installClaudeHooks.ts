@@ -63,6 +63,7 @@ function buildManagedHookDefs(command: string): Record<string, HookDef> {
 		UserPromptSubmit: plain,
 		Stop: plain,
 		PostToolUse: wildcard,
+		PostToolUseFailure: wildcard,
 		PermissionRequest: wildcard,
 	};
 }
