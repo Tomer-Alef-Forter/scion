@@ -18,8 +18,10 @@ interface SettingsModalProps {
 	busy: boolean;
 	error: string | null;
 	orphanCount: number | null;
+	liveSessionCount: number | null;
 	onSave: (patch: Partial<HostSettings>) => Promise<void>;
 	onCleanupOrphans: () => void;
+	onStopAllAgents: () => void;
 	onClose: () => void;
 }
 
@@ -28,8 +30,10 @@ export function SettingsModal({
 	busy,
 	error,
 	orphanCount,
+	liveSessionCount,
 	onSave,
 	onCleanupOrphans,
+	onStopAllAgents,
 	onClose,
 }: SettingsModalProps) {
 	const [defaultAgent, setDefaultAgent] = useState<AgentType>(settings.defaultAgent);
@@ -118,6 +122,29 @@ export function SettingsModal({
 								className="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
 							>
 								Clean up
+							</button>
+						</div>
+					</div>
+
+					<div className="mt-4 border-t border-border pt-3">
+						<label className="mb-1 block text-xs font-medium text-muted-foreground">
+							Agent daemon
+						</label>
+						<div className="flex items-center justify-between gap-2">
+							<p className="text-xs text-muted-foreground">
+								{liveSessionCount === null
+									? "Checking…"
+									: liveSessionCount === 0
+										? "No agents running."
+										: `${liveSessionCount} agent${liveSessionCount === 1 ? "" : "s"} running — survives closing this window.`}
+							</p>
+							<button
+								type="button"
+								disabled={busy || !liveSessionCount}
+								onClick={onStopAllAgents}
+								className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
+							>
+								Stop all agents
 							</button>
 						</div>
 					</div>

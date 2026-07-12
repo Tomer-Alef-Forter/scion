@@ -381,6 +381,20 @@ async function main() {
 			!existsSync(orphanWt.worktreePath),
 	);
 
+	// ---- daemon status/shutdown (this process uses inProcessPtyBackend, so
+	// shutdown is a safe no-op here — the real daemon process is exercised by
+	// scripts/daemon-smoke.ts) ----
+
+	const daemonStatusRes = await app.request("/api/daemon/status");
+	const daemonStatus = await daemonStatusRes.json();
+	check(
+		"GET /api/daemon/status reports a live session count",
+		daemonStatusRes.status === 200 && typeof daemonStatus.liveSessionCount === "number",
+	);
+
+	const daemonShutdownRes = await app.request("/api/daemon/shutdown", { method: "POST" });
+	check("POST /api/daemon/shutdown -> ok", daemonShutdownRes.status === 200);
+
 	// ---- WS terminal bridge, over a REAL socket ----
 
 	let httpServer!: ReturnType<typeof serve>;

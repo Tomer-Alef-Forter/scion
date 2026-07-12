@@ -8,7 +8,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import type { ITheme } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { TerminalConnection } from "../../lib/TerminalConnection";
 
 const TERMINAL_THEME: ITheme = {
@@ -38,18 +38,42 @@ const TERMINAL_THEME: ITheme = {
 const TERMINAL_FONT_FAMILY =
 	'"JetBrains Mono", "MesloLGS NF", "Menlo", "Monaco", "Courier New", monospace';
 
+export interface WebTerminalHandle {
+	focus(): void;
+}
+
 interface WebTerminalProps {
 	workspaceId: string;
 	terminalId: string;
+	/** Fires when Ctrl-B d is pressed inside the terminal (see the custom key
+	 * handler below) — purely informational, since blurring the terminal
+	 * already moves `document.activeElement` off it, which is all the app's
+	 * shortcut guard (`isTypingTarget`) needs to resume handling keys. */
+	onDetach?: () => void;
+	/** Focus the terminal right after it mounts — only when this mount was
+	 * triggered by an explicit "enter this workspace" action (Enter key /
+	 * click), never by keyboard preview-navigation between workspaces
+	 * (which must never steal focus mid-browse). */
+	autoFocus?: boolean;
 }
 
 type ConnectionState = "connecting" | "open" | "reconnecting" | "error" | "exited";
 
-export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
+export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(function WebTerminal(
+	{ workspaceId, terminalId, onDetach, autoFocus },
+	ref,
+) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const connectionRef = useRef<TerminalConnection | null>(null);
+	const terminalRef = useRef<Terminal | null>(null);
+	const onDetachRef = useRef(onDetach);
+	onDetachRef.current = onDetach;
 	const [state, setState] = useState<ConnectionState>("connecting");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+	useImperativeHandle(ref, () => ({
+		focus: () => terminalRef.current?.focus(),
+	}), []);
 
 	useEffect(() => {
 		const container = containerRef.current;
@@ -80,9 +104,41 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 			theme: TERMINAL_THEME,
 			allowProposedApi: true,
 		});
+		terminalRef.current = terminal;
 		const fitAddon = new FitAddon();
 		terminal.loadAddon(fitAddon);
 		terminal.open(container);
+		if (autoFocus) terminal.focus();
+
+		// Ctrl-B then a key is the escape hatch out of the terminal back to
+		// keyboard list-navigation (mirrors ui/attach.ts's Ink TUI detach
+		// convention, and tmux/screen's prefix-key pattern generally) — chosen
+		// specifically because it's a two-key sequence essentially no terminal
+		// program binds, unlike plain Escape (used constantly by vim, prompts,
+		// etc). `d` detaches; anything else forwards the swallowed Ctrl-B byte
+		// then lets xterm process the second key normally.
+		let detachArmed = false;
+		terminal.attachCustomKeyEventHandler((e) => {
+			if (e.type !== "keydown") return true;
+			const noOtherModifiers = !e.shiftKey && !e.altKey && !e.metaKey;
+			if (!detachArmed && e.ctrlKey && noOtherModifiers && e.key.toLowerCase() === "b") {
+				detachArmed = true;
+				return false; // swallow — wait to see what follows
+			}
+			if (detachArmed) {
+				detachArmed = false;
+				if (!e.ctrlKey && noOtherModifiers && e.key.toLowerCase() === "d") {
+					terminal.blur();
+					onDetachRef.current?.();
+					return false; // swallow the 'd' too
+				}
+				// Not the detach key — forward the swallowed Ctrl-B byte, then
+				// let xterm process this key normally.
+				connectionRef.current?.send({ type: "input", data: "\x02" });
+				return true;
+			}
+			return true;
+		});
 
 		// GPU-accelerated rendering. This is the single biggest fluidity win for
 		// busy sessions (streaming agent output) — it pushes glyph rasterization
@@ -175,9 +231,15 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 			visualViewport?.removeEventListener("scroll", refit);
 			connection.dispose();
 			connectionRef.current = null;
+			terminalRef.current = null;
 			webglAddon?.dispose();
 			terminal.dispose();
 		};
+		// autoFocus is intentionally read once at mount (a new terminal/
+		// workspaceId), not treated as a live/reactive prop — it must never
+		// re-run this whole effect (tearing down and reconnecting the PTY
+		// session) just because a later render's autoFocus value changed.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [workspaceId, terminalId]);
 
 	return (
@@ -201,4 +263,4 @@ export function WebTerminal({ workspaceId, terminalId }: WebTerminalProps) {
 			</div>
 		</div>
 	);
-}
+});

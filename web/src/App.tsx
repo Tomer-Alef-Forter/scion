@@ -3,16 +3,18 @@
 // not polled); a slower fallback tick keeps diff summaries fresh since git
 // state changes aren't pushed. New-workspace flow is a real modal.
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { type Command, CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { ConfirmDialog } from "./components/ConfirmDialog/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
 import { NewWorkspaceModal } from "./components/NewWorkspaceModal/NewWorkspaceModal";
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal";
-import { WebTerminal } from "./components/WebTerminal";
+import { type WebTerminalHandle, WebTerminal } from "./components/WebTerminal";
 import { WorkspaceContextMenu } from "./components/WorkspaceGrid/WorkspaceContextMenu";
 import { WorkspaceGrid } from "./components/WorkspaceGrid/WorkspaceGrid";
 import { api, type HostSettings, type Project, type WorkspaceWithStatus } from "./lib/api";
 import { subscribeToStatusEvents } from "./lib/eventsSocket";
+import { isTypingTarget } from "./lib/keyboardShortcuts";
 import { cn } from "./lib/utils";
 
 // Code-split: @pierre/diffs (diff rendering) and the file browser/viewer
@@ -38,6 +40,11 @@ const DETAIL_TABS: { id: DetailTab; label: string }[] = [
 	{ id: "files", label: "Files" },
 ];
 
+// Fixed anchor for the keyboard-triggered ("r") rename box — there's no
+// click coordinate to anchor it to like the real context menu has, so it's
+// pinned just past the sidebar (256px) + workspace grid (320px) width.
+const KEYBOARD_RENAME_ANCHOR = { x: 592, y: 96 };
+
 export function App() {
 	const [projects, setProjects] = useState<Project[]>([]);
 	const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -58,6 +65,7 @@ export function App() {
 		workspace: WorkspaceWithStatus;
 		x: number;
 		y: number;
+		initialMode?: "menu" | "rename";
 	} | null>(null);
 	const [settings, setSettings] = useState<HostSettings | null>(null);
 	const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -68,14 +76,37 @@ export function App() {
 	} | null>(null);
 	const [orphanCount, setOrphanCount] = useState<number | null>(null);
 	const [showOrphanConfirm, setShowOrphanConfirm] = useState(false);
+	const [liveSessionCount, setLiveSessionCount] = useState<number | null>(null);
+	const [showStopAllAgentsConfirm, setShowStopAllAgentsConfirm] = useState(false);
+	const [showCommandPalette, setShowCommandPalette] = useState(false);
 
 	const selectedProjectIdRef = useRef(selectedProjectId);
 	selectedProjectIdRef.current = selectedProjectId;
+	const webTerminalRef = useRef<WebTerminalHandle>(null);
+	// True only for an explicit "activate this workspace" action (click,
+	// Enter, command palette) — never for arrow-key preview-browsing, which
+	// must never steal focus into the terminal mid-browse. Read once by
+	// WebTerminal at mount, so it only matters at the instant openTerminal
+	// changes and a new instance mounts.
+	const autoFocusTerminalRef = useRef(false);
 
 	useEffect(() => {
 		api.listProjects().then(setProjects).catch((e) => setError(String(e)));
 		api.getSettings().then(setSettings).catch((e) => setError(String(e)));
 	}, []);
+
+	// Auto-dismiss the error toast — re-arms on every new error (including one
+	// replacing an already-showing one), and never fires after a manual
+	// dismiss (error becomes null, so the effect's condition skips it).
+	useEffect(() => {
+		if (!error) return;
+		const timer = setTimeout(() => setError(null), 6000);
+		return () => clearTimeout(timer);
+	}, [error]);
+
+	// The full keyboard-shortcut listener lives further down (after
+	// selectedProject/selectedWorkspace/commands are computed) — see the
+	// comment there for why.
 
 	async function handleSaveSettings(patch: Partial<HostSettings>) {
 		setBusy(true);
@@ -103,6 +134,20 @@ export function App() {
 			);
 			const orphans = await api.listOrphanedWorktrees();
 			setOrphanCount(orphans.length);
+		} catch (e) {
+			setSettingsError(String(e));
+		} finally {
+			setBusy(false);
+		}
+	}
+
+	async function handleStopAllAgents() {
+		setBusy(true);
+		setShowStopAllAgentsConfirm(false);
+		try {
+			await api.shutdownDaemon();
+			setLiveSessionCount(0);
+			if (selectedProjectId) refreshWorkspaces(selectedProjectId);
 		} catch (e) {
 			setSettingsError(String(e));
 		} finally {
@@ -182,6 +227,31 @@ export function App() {
 		}
 	}
 
+	// Named (not inline) so both the sidebar's project list and the command
+	// palette's "Switch to project" entries call the exact same logic.
+	function selectProject(id: string) {
+		setSelectedProjectId(id);
+		setSelectedWorkspaceId(null);
+		setOpenTerminal(null);
+	}
+
+	// Named (not inline) so both the sidebar's settings button and the
+	// command palette's "Open settings" entry call the exact same logic.
+	function openSettings() {
+		setSettingsError(null);
+		setShowSettingsModal(true);
+		setOrphanCount(null);
+		api
+			.listOrphanedWorktrees()
+			.then((orphans) => setOrphanCount(orphans.length))
+			.catch(() => setOrphanCount(0));
+		setLiveSessionCount(null);
+		api
+			.getDaemonStatus()
+			.then((s) => setLiveSessionCount(s.liveSessionCount))
+			.catch(() => setLiveSessionCount(0));
+	}
+
 	async function handleCreateWorkspace(prompt: string, name?: string) {
 		if (!selectedProjectId) return;
 		setBusy(true);
@@ -208,15 +278,31 @@ export function App() {
 		}
 	}
 
-	async function handleSelectWorkspace(ws: WorkspaceWithStatus) {
+	// Side-effect-free: sets the selection and attaches ONLY if a live
+	// terminal already exists. Safe to call repeatedly while arrow-key
+	// browsing — unlike handleSelectWorkspace below, this never spawns an
+	// agent, so scrolling past a dozen finished workspaces never resumes any
+	// of them.
+	function previewWorkspace(ws: WorkspaceWithStatus) {
 		setSelectedWorkspaceId(ws.id);
 		setActionMessage(null);
 		setActiveTab("terminal");
 		if (ws.terminalId) {
 			api.markSeen(ws.id).catch(() => {});
 			setOpenTerminal({ workspaceId: ws.id, terminalId: ws.terminalId });
-			return;
+		} else {
+			setOpenTerminal(null);
 		}
+	}
+
+	// The explicit "activate" gesture (mouse click, Enter, command palette) —
+	// resumes a finished workspace's agent if needed. autoFocusTerminalRef is
+	// set true here so the terminal focuses itself once it (re)mounts, since
+	// unlike preview-browsing this is a deliberate "open this" action.
+	async function handleSelectWorkspace(ws: WorkspaceWithStatus) {
+		autoFocusTerminalRef.current = true;
+		previewWorkspace(ws);
+		if (ws.terminalId) return;
 		// No live terminal — resume in the same worktree rather than dead-ending.
 		setBusy(true);
 		try {
@@ -306,27 +392,192 @@ export function App() {
 	const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
 	const selectedWorkspace = workspaces.find((w) => w.id === selectedWorkspaceId) ?? null;
 
+	// Every entry reuses an EXISTING handler — destructive ones (merge/delete)
+	// still route through requestMerge/requestDelete's confirm dialogs, never
+	// executing directly. Nothing here bypasses that safety.
+	const commands: Command[] = [
+		...(selectedProject
+			? [
+					{
+						id: "new-workspace",
+						label: "New workspace",
+						hint: selectedProject.name,
+						run: () => {
+							setModalError(null);
+							setShowNewWorkspaceModal(true);
+						},
+					},
+				]
+			: []),
+		...(selectedWorkspace
+			? [
+					{
+						id: "merge-workspace",
+						label: `Merge "${selectedWorkspace.name}"`,
+						run: () => requestMerge(selectedWorkspace),
+					},
+					{
+						id: "delete-workspace",
+						label: `Delete "${selectedWorkspace.name}"`,
+						run: () => requestDelete(selectedWorkspace),
+					},
+					{
+						id: "open-editor",
+						label: `Open "${selectedWorkspace.name}" in editor`,
+						run: () => handleOpen(selectedWorkspace),
+					},
+				]
+			: []),
+		...workspaces
+			.filter((ws) => ws.id !== selectedWorkspaceId)
+			.map((ws) => ({
+				id: `goto-workspace-${ws.id}`,
+				label: `Go to "${ws.name}"`,
+				hint: ws.branch,
+				run: () => handleSelectWorkspace(ws),
+			})),
+		...projects
+			.filter((p) => p.id !== selectedProjectId)
+			.map((p) => ({
+				id: `switch-project-${p.id}`,
+				label: `Switch to project "${p.name}"`,
+				run: () => selectProject(p.id),
+			})),
+		{ id: "open-settings", label: "Open settings", run: openSettings },
+	];
+
+	// Full keyboard operability: navigate/act on workspaces and projects
+	// without a mouse. Deliberately has NO dependency array (runs after every
+	// render) rather than tracking every referenced value — this effect
+	// reads a lot of state/handlers, and re-attaching a single document
+	// keydown listener every render is cheap; the alternative (an exact
+	// dependency list) is easy to get subtly wrong and let a stale closure
+	// slip through. Guarded first by isTypingTarget (never fires while
+	// typing in an input OR while the terminal has focus) and then by
+	// "is any modal/dialog open" (those don't always have a focused input,
+	// e.g. Settings' <select>s, so isTypingTarget alone isn't enough).
+	const anyOverlayOpen =
+		showNewWorkspaceModal ||
+		showSettingsModal ||
+		!!contextMenu ||
+		!!confirmAction ||
+		showOrphanConfirm ||
+		showStopAllAgentsConfirm;
+
+	useEffect(() => {
+		function onKeyDown(e: KeyboardEvent) {
+			if (isTypingTarget(e)) return;
+
+			// Cmd/Ctrl+K toggles the palette regardless of other overlays, so
+			// it can also close itself.
+			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+				e.preventDefault();
+				setShowCommandPalette((v) => !v);
+				return;
+			}
+			if (anyOverlayOpen || showCommandPalette) return;
+
+			if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+				if (!selectedProjectId || workspaces.length === 0) return;
+				e.preventDefault();
+				const currentIndex = workspaces.findIndex((w) => w.id === selectedWorkspaceId);
+				let nextIndex: number;
+				if (currentIndex === -1) {
+					nextIndex = e.key === "ArrowDown" ? 0 : workspaces.length - 1;
+				} else {
+					const delta = e.key === "ArrowDown" ? 1 : -1;
+					nextIndex = Math.min(Math.max(currentIndex + delta, 0), workspaces.length - 1);
+				}
+				const next = workspaces[nextIndex];
+				if (next) {
+					autoFocusTerminalRef.current = false; // browsing — never steal focus
+					previewWorkspace(next);
+				}
+				return;
+			}
+
+			if (e.key === "Enter") {
+				if (!selectedWorkspace) return;
+				e.preventDefault();
+				if (openTerminal && openTerminal.workspaceId === selectedWorkspace.id) {
+					webTerminalRef.current?.focus();
+					return;
+				}
+				handleSelectWorkspace(selectedWorkspace).then(() => {
+					// Give React a chance to commit the new WebTerminal instance
+					// (triggered by the resume above) before focusing it — a
+					// pragmatic one-off fix, not worth an effect-based
+					// ready-signal for.
+					requestAnimationFrame(() => webTerminalRef.current?.focus());
+				});
+				return;
+			}
+
+			if (e.key.toLowerCase() === "n" && selectedProject) {
+				e.preventDefault();
+				setModalError(null);
+				setShowNewWorkspaceModal(true);
+				return;
+			}
+
+			if (e.key === "[" || e.key === "]") {
+				if (!selectedProjectId || projects.length < 2) return;
+				e.preventDefault();
+				const idx = projects.findIndex((p) => p.id === selectedProjectId);
+				const delta = e.key === "]" ? 1 : -1;
+				const next = projects[(idx + delta + projects.length) % projects.length];
+				if (next) selectProject(next.id);
+				return;
+			}
+
+			if (!selectedWorkspace) return;
+
+			if (e.key.toLowerCase() === "m") {
+				e.preventDefault();
+				requestMerge(selectedWorkspace);
+				return;
+			}
+			if (e.key.toLowerCase() === "x") {
+				e.preventDefault();
+				requestDelete(selectedWorkspace);
+				return;
+			}
+			if (e.key.toLowerCase() === "o") {
+				e.preventDefault();
+				handleOpen(selectedWorkspace);
+				return;
+			}
+			if (e.key.toLowerCase() === "r") {
+				e.preventDefault();
+				setContextMenu({
+					workspace: selectedWorkspace,
+					x: KEYBOARD_RENAME_ANCHOR.x,
+					y: KEYBOARD_RENAME_ANCHOR.y,
+					initialMode: "rename",
+				});
+				return;
+			}
+			if (e.key === "1" || e.key === "2" || e.key === "3") {
+				const tab = DETAIL_TABS[Number(e.key) - 1];
+				if (tab) {
+					e.preventDefault();
+					setActiveTab(tab.id);
+				}
+			}
+		}
+		document.addEventListener("keydown", onKeyDown);
+		return () => document.removeEventListener("keydown", onKeyDown);
+	});
+
 	return (
 		<div className="flex h-screen bg-background text-foreground">
 			<ProjectSidebar
 				projects={projects}
 				selectedProjectId={selectedProjectId}
-				onSelect={(id) => {
-					setSelectedProjectId(id);
-					setSelectedWorkspaceId(null);
-					setOpenTerminal(null);
-				}}
+				onSelect={selectProject}
 				onAdd={handleAddProject}
 				onRemove={handleRemoveProject}
-				onOpenSettings={() => {
-					setSettingsError(null);
-					setShowSettingsModal(true);
-					setOrphanCount(null);
-					api
-						.listOrphanedWorktrees()
-						.then((orphans) => setOrphanCount(orphans.length))
-						.catch(() => setOrphanCount(0));
-				}}
+				onOpenSettings={openSettings}
 				busy={busy}
 			/>
 
@@ -362,6 +613,7 @@ export function App() {
 										<button
 											type="button"
 											disabled={busy}
+											title="Merge (m)"
 											onClick={() => requestMerge(selectedWorkspace)}
 											className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
 										>
@@ -370,6 +622,7 @@ export function App() {
 										<button
 											type="button"
 											disabled={busy}
+											title="Open in editor (o)"
 											onClick={() => handleOpen(selectedWorkspace)}
 											className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
 										>
@@ -378,6 +631,7 @@ export function App() {
 										<button
 											type="button"
 											disabled={busy}
+											title="Delete (x)"
 											onClick={() => requestDelete(selectedWorkspace)}
 											className="rounded-md border border-border px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
 										>
@@ -412,8 +666,15 @@ export function App() {
 										{activeTab === "terminal" &&
 											(openTerminal && openTerminal.workspaceId === selectedWorkspace.id ? (
 												<WebTerminal
+													ref={webTerminalRef}
 													workspaceId={openTerminal.workspaceId}
 													terminalId={openTerminal.terminalId}
+													autoFocus={autoFocusTerminalRef.current}
+													onDetach={() =>
+														setActionMessage(
+															"Detached from terminal — arrow keys navigate the workspace list again.",
+														)
+													}
 												/>
 											) : (
 												<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -442,17 +703,25 @@ export function App() {
 								</div>
 							</>
 						) : (
-							<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-								Select a workspace, or create a new one.
+							<div className="flex h-full flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+								<span>Select a workspace, or create a new one.</span>
+								<span className="text-xs">
+									<kbd className="rounded border border-border px-1">↑↓</kbd> navigate ·{" "}
+									<kbd className="rounded border border-border px-1">n</kbd> new ·{" "}
+									<kbd className="rounded border border-border px-1">⌘K</kbd>/
+									<kbd className="rounded border border-border px-1">Ctrl+K</kbd> commands
+								</span>
 							</div>
 						)}
 					</div>
 				</>
 			) : (
-				<div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-					{projects.length === 0
-						? 'Add a project on the left to get started.'
-						: "Select a project."}
+				<div className="flex flex-1 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
+					<span>
+						{projects.length === 0
+							? 'Add a project on the left to get started.'
+							: "Select a project."}
+					</span>
 				</div>
 			)}
 
@@ -485,6 +754,7 @@ export function App() {
 					y={contextMenu.y}
 					workspaceName={contextMenu.workspace.name}
 					busy={busy}
+					initialMode={contextMenu.initialMode}
 					onClose={() => setContextMenu(null)}
 					onRename={(name) => handleRename(contextMenu.workspace, name)}
 					onMerge={() => requestMerge(contextMenu.workspace)}
@@ -499,8 +769,10 @@ export function App() {
 					busy={busy}
 					error={settingsError}
 					orphanCount={orphanCount}
+					liveSessionCount={liveSessionCount}
 					onSave={handleSaveSettings}
 					onCleanupOrphans={() => setShowOrphanConfirm(true)}
+					onStopAllAgents={() => setShowStopAllAgentsConfirm(true)}
 					onClose={() => setShowSettingsModal(false)}
 				/>
 			)}
@@ -514,6 +786,18 @@ export function App() {
 					busy={busy}
 					onConfirm={handleCleanupOrphans}
 					onCancel={() => setShowOrphanConfirm(false)}
+				/>
+			)}
+
+			{showStopAllAgentsConfirm && (
+				<ConfirmDialog
+					title="Stop all agents?"
+					message={`Stop the agent daemon, ending ${liveSessionCount} running agent${liveSessionCount === 1 ? "" : "s"} across every project. Worktrees and branches are untouched — each workspace can be resumed afterward.`}
+					confirmLabel="Stop all agents"
+					destructive
+					busy={busy}
+					onConfirm={handleStopAllAgents}
+					onCancel={() => setShowStopAllAgentsConfirm(false)}
 				/>
 			)}
 
@@ -545,6 +829,10 @@ export function App() {
 					onConfirm={handleConfirmAction}
 					onCancel={() => setConfirmAction(null)}
 				/>
+			)}
+
+			{showCommandPalette && (
+				<CommandPalette commands={commands} onClose={() => setShowCommandPalette(false)} />
 			)}
 		</div>
 	);

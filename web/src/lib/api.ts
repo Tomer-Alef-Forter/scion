@@ -103,6 +103,10 @@ export const api = {
 			{ method: "POST" },
 		),
 
+	getDaemonStatus: () => request<{ liveSessionCount: number }>("/daemon/status"),
+	// Stops the daemon process — kills EVERY live agent across every project.
+	shutdownDaemon: () => request<{ ok: true }>("/daemon/shutdown", { method: "POST" }),
+
 	listProjects: () => request<Project[]>("/projects"),
 	addProject: (repoPath: string) =>
 		request<Project>("/projects", {

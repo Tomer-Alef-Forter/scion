@@ -23,6 +23,7 @@ export function WorkspaceGrid({
 				<button
 					type="button"
 					onClick={onNew}
+					title="New workspace (n)"
 					className="rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:opacity-90"
 				>
 					+ New

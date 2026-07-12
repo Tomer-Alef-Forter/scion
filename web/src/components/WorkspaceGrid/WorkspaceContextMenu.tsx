@@ -11,6 +11,10 @@ interface WorkspaceContextMenuProps {
 	y: number;
 	workspaceName: string;
 	busy: boolean;
+	/** Opens straight into the rename input — used when triggered by the
+	 * keyboard "r" shortcut (no right-click coordinate/reason to show the
+	 * full menu first). Defaults to the normal action-list view. */
+	initialMode?: "menu" | "rename";
 	onClose: () => void;
 	onRename: (name: string) => void;
 	onMerge: () => void;
@@ -23,13 +27,14 @@ export function WorkspaceContextMenu({
 	y,
 	workspaceName,
 	busy,
+	initialMode = "menu",
 	onClose,
 	onRename,
 	onMerge,
 	onOpen,
 	onDelete,
 }: WorkspaceContextMenuProps) {
-	const [mode, setMode] = useState<"menu" | "rename">("menu");
+	const [mode, setMode] = useState<"menu" | "rename">(initialMode);
 	const [name, setName] = useState(workspaceName);
 	const ref = useRef<HTMLDivElement>(null);
 

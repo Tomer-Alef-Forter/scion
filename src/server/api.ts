@@ -105,6 +105,21 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 		return c.json(result);
 	});
 
+	// ---- PTY daemon (owns every live agent independently of this process —
+	// see src/daemon/*) ----
+
+	api.get("/daemon/status", async (c) => {
+		const sessions = await backend.listSessions();
+		return c.json({ liveSessionCount: sessions.filter((s) => !s.exited).length });
+	});
+
+	// Stops the daemon process — kills EVERY live agent across every project,
+	// not just the current one, since the daemon is a single shared process.
+	api.post("/daemon/shutdown", async (c) => {
+		await backend.shutdownDaemon();
+		return c.json({ ok: true });
+	});
+
 	// ---- projects ----
 
 	api.get("/projects", (c) => c.json(store.listProjects()));
