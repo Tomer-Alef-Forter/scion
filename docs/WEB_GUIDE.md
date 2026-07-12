@@ -68,9 +68,11 @@ Either way, first run installs Claude Code lifecycle hooks into
 `~/.scion/hooks/notify.sh` — exactly like the terminal UI, since it's
 the same setup step.
 
-> **Run one front end at a time.** The terminal UI and the web UI are
-> separate processes, each with its own in-memory table of live PTYs. A
-> workspace's agent is only attachable from whichever process launched it.
+> **Both front ends can run at once.** A background daemon (auto-spawned the
+> first time either one needs a PTY) owns every live agent process
+> independently of the terminal UI and the web server — a workspace started
+> in one is attachable from the other, and restarting either never kills a
+> live agent.
 
 ---
 
@@ -176,10 +178,12 @@ Same state machine as the terminal UI:
 
 ## 7. Resuming a workspace
 
-If you close the app (or it crashes) while an agent is running, that agent's
-process ends — there's no background daemon keeping PTYs alive across a
-restart. The workspace itself (worktree + branch) is untouched; only the live
-terminal is gone.
+Closing or restarting the web server (or the terminal UI) does **not** end a
+running agent — a background daemon owns the PTY independently of either
+front end. You'll still land on "resume" in one case: if the PTY daemon
+itself crashes or is stopped (rare — it's a small, single-purpose process),
+that agent's process really does end. The workspace itself (worktree +
+branch) is always untouched either way; only the live terminal is gone.
 
 Clicking a card with no live terminal **resumes** it: a fresh `claude` is
 launched in the *same* worktree (no new worktree or branch), and if a prior

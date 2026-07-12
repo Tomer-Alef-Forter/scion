@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { createDb } from "../src/db/db.ts";
 import { createStatusStore } from "../src/engine/status.ts";
 import { getSession, killAll, spawnSession } from "../src/engine/pty.ts";
+import { inProcessPtyBackend } from "../src/engine/ptyBackend.ts";
 import { addWorktree } from "../src/engine/worktrees.ts";
 import { createStore } from "../src/store/projects.ts";
 import { createServerApp } from "../src/server/app.ts";
@@ -52,8 +53,8 @@ async function main() {
 
 	const db = createDb(join(base, "host.db"));
 	const status = createStatusStore(db);
-	const store = createStore(db, status);
-	const { app, injectWebSocket } = createServerApp({ store, status });
+	const store = createStore(db, status, inProcessPtyBackend);
+	const { app, injectWebSocket } = createServerApp({ store, status, backend: inProcessPtyBackend });
 
 	// ---- REST, in-process (no port needed — app.request() drives fetch directly) ----
 

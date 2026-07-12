@@ -14,7 +14,7 @@
 // On close we only unsubscribe listeners — we NEVER kill the session (mirrors
 // src/ui/attach.ts: detaching must not stop the agent).
 import type { WSContext, WSEvents } from "hono/ws";
-import { getSession } from "../engine/pty.ts";
+import type { AttachHandle, PtyBackend } from "../engine/ptyBackend.ts";
 
 interface InputMessage {
 	type: "input";
@@ -60,14 +60,19 @@ function parseClientMessage(raw: unknown): ClientMessage | null {
 
 export function createTerminalSocketHandlers(
 	terminalId: string,
+	backend: PtyBackend,
 	options: { skipReplay?: boolean } = {},
 ): WSEvents<unknown> {
-	let cleanup: () => void = () => {};
+	let handle: AttachHandle | null = null;
 
 	return {
-		onOpen(_evt, ws: WSContext<unknown>) {
-			const session = getSession(terminalId);
-			if (!session || session.exited) {
+		async onOpen(_evt, ws: WSContext<unknown>) {
+			// backend.attach() handles scrollback replay itself (as the first
+			// onData emission, unless skipReplay) — both backends implement it,
+			// so there's nothing left for this file to do beyond wiring the
+			// handle's callbacks to the socket.
+			const attached = await backend.attach(terminalId, { skipReplay: options.skipReplay });
+			if (!attached) {
 				ws.send(
 					JSON.stringify({
 						type: "error",
@@ -77,43 +82,31 @@ export function createTerminalSocketHandlers(
 				ws.close();
 				return;
 			}
+			handle = attached;
 
 			ws.send(JSON.stringify({ type: "attached", terminalId }));
 
-			// Replay scrollback so a newly-connected client sees history immediately
-			// (skipped on reconnect once the client already holds it — see header).
-			if (!options.skipReplay) {
-				const buffer = session.getBuffer();
-				if (buffer) ws.send(Buffer.from(buffer, "utf8"));
-			}
-
-			const offData = session.onData((chunk) => {
+			handle.onData((chunk) => {
 				ws.send(Buffer.from(chunk, "utf8"));
 			});
-			const offExit = session.onExit((exitCode) => {
+			handle.onExit((exitCode) => {
 				ws.send(JSON.stringify({ type: "exit", exitCode, signal: 0 }));
 			});
-
-			cleanup = () => {
-				offData();
-				offExit();
-			};
 		},
 
 		onMessage(evt) {
-			const session = getSession(terminalId);
-			if (!session || session.exited) return;
+			if (!handle) return;
 			const msg = parseClientMessage(evt.data);
 			if (!msg) return;
 			if (msg.type === "input") {
-				session.write(msg.data);
+				handle.write(msg.data);
 			} else {
-				session.resize(msg.cols, msg.rows);
+				handle.resize(msg.cols, msg.rows);
 			}
 		},
 
 		onClose() {
-			cleanup();
+			handle?.close();
 		},
 	};
 }

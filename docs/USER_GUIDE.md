@@ -198,9 +198,10 @@ repo checkout**:
 
 ## 10. Limitations (vs real Superset)
 
-- **PTYs don't survive an app restart** — there's no background daemon. Quitting
-  the app ends running agent terminals. Worktrees, branches, and DB state
-  persist; the live sessions do not.
+- **A crash of the PTY daemon itself still ends running agent terminals** —
+  restarting the terminal UI or the web server does not (a background daemon,
+  auto-spawned on first use, owns every live PTY independently of either
+  front end). Worktrees, branches, and DB state always persist regardless.
 - No PR review, no cloud sync, no multi-agent presets, no GUI.
 - `x` on the dashboard removes the **worktree** but keeps the branch. `x` on
   Projects removes the project from the list only — it doesn't touch your repo.

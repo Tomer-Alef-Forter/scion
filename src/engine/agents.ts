@@ -5,7 +5,7 @@
 // prompt is passed as a plain argv positional (superset's "argv" transport).
 import { randomUUID } from "node:crypto";
 import type { AgentType } from "../db/schema.ts";
-import { spawnSession } from "./pty.ts";
+import type { PtyBackend } from "./ptyBackend.ts";
 
 /**
  * Sanitize a prompt destined for the agent. Copied from superset
@@ -105,7 +105,8 @@ export interface LaunchResult {
  * with `--resume <id>` instead of starting fresh; other agents ignore it (no
  * equivalent hook system to have captured a session id from).
  */
-export function launchAgent(args: {
+export async function launchAgent(args: {
+	backend: PtyBackend;
 	agentType: AgentType;
 	workspaceId: string;
 	worktreePath: string;
@@ -113,12 +114,12 @@ export function launchAgent(args: {
 	resumeSessionId?: string | null;
 	cols?: number;
 	rows?: number;
-}): LaunchResult {
+}): Promise<LaunchResult> {
 	const terminalId = randomUUID();
 	const config = AGENT_CONFIGS[args.agentType];
 	const argv = config.buildArgv(args);
 
-	spawnSession({
+	await args.backend.spawnSession({
 		id: terminalId,
 		workspaceId: args.workspaceId,
 		file: config.file,

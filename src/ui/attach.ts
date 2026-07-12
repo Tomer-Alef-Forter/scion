@@ -1,33 +1,37 @@
 // Raw PTY passthrough (tmux-style attach). Runs OUTSIDE Ink: Ink is unmounted
 // before this is called and re-rendered after it resolves. Detach with Ctrl-b d.
-import { getSession } from "../engine/pty.ts";
+import type { PtyBackend } from "../engine/ptyBackend.ts";
 
 const DETACH_HINT =
 	"\r\n\x1b[2m[scion] attached — press Ctrl-b then d to detach]\x1b[0m\r\n";
 
-export function runAttach(terminalId: string): Promise<void> {
-	const session = getSession(terminalId);
+export async function runAttach(terminalId: string, backend: PtyBackend): Promise<void> {
 	const { stdin, stdout } = process;
+	const handle = await backend.attach(terminalId);
 
-	if (!session || session.exited) {
+	if (!handle) {
 		stdout.write("\r\n[agent session is not running]\r\n");
 		return new Promise((resolve) => setTimeout(resolve, 800));
 	}
 
-	// Clear screen, replay scrollback, size the PTY to the current terminal.
+	// Clear screen, size the PTY to the current terminal. Scrollback replay
+	// arrives as the handle's first onData emission — registering it before
+	// the hint keeps the on-screen order (replay, then hint) exactly as
+	// before for the in-process backend (a synchronous emission); over the
+	// daemon it's a real round trip, so the hint could in principle land a
+	// beat before the replay finishes streaming in — a harmless, imperceptible
+	// cosmetic quirk, not a correctness issue.
 	stdout.write("\x1b[2J\x1b[3J\x1b[H");
-	stdout.write(session.getBuffer());
-	stdout.write(DETACH_HINT);
-	session.resize(stdout.columns ?? 120, stdout.rows ?? 32);
 
 	return new Promise<void>((resolve) => {
 		let cleanedUp = false;
 		let detachArmed = false; // set after Ctrl-b, awaiting 'd'
 
-		const offData = session.onData((chunk) => stdout.write(chunk));
-		const offExit = session.onExit(() => finish());
-		const onResize = () =>
-			session.resize(stdout.columns ?? 120, stdout.rows ?? 32);
+		handle.onData((chunk) => stdout.write(chunk));
+		stdout.write(DETACH_HINT);
+		handle.resize(stdout.columns ?? 120, stdout.rows ?? 32);
+		handle.onExit(() => finish());
+		const onResize = () => handle.resize(stdout.columns ?? 120, stdout.rows ?? 32);
 		stdout.on("resize", onResize);
 
 		const onInput = (data: Buffer) => {
@@ -43,25 +47,27 @@ export function runAttach(terminalId: string): Promise<void> {
 					return;
 				}
 				// Not the detach key — forward the swallowed Ctrl-b plus this key.
-				session.write("\x02");
-				session.write(s);
+				handle.write("\x02");
+				handle.write(s);
 				return;
 			}
-			session.write(s);
+			handle.write(s);
 		};
 
-		function finish() {
+		// An arrow function expression (not a hoisted `function` declaration) —
+		// TS only preserves the `handle` non-null narrowing from above into
+		// closures of the former kind.
+		const finish = () => {
 			if (cleanedUp) return;
 			cleanedUp = true;
-			offData();
-			offExit();
+			handle.close();
 			stdout.off("resize", onResize);
 			stdin.off("data", onInput);
 			if (stdin.isTTY) stdin.setRawMode(false);
 			stdin.pause();
 			stdout.write("\x1b[2J\x1b[3J\x1b[H");
 			resolve();
-		}
+		};
 
 		if (stdin.isTTY) stdin.setRawMode(true);
 		stdin.resume();

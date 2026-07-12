@@ -1,17 +1,17 @@
 #!/usr/bin/env -S npx tsx
 // Scion entry point. Runs under Node via tsx (node-pty + better-sqlite3
 // need Node's native-addon loader; they don't work under Bun).
-// Boot order: setup-if-needed → open+migrate SQLite → start hook server →
-// render the Ink TUI in a loop that hands off to raw terminal takeovers
-// (attach / diff pager) and re-renders afterward.
+// Boot order: setup-if-needed → open+migrate SQLite → connect to the PTY
+// daemon (auto-spawned if not already running) → render the Ink TUI in a
+// loop that hands off to raw terminal takeovers (attach / diff pager) and
+// re-renders afterward.
 import { existsSync, writeFileSync } from "node:fs";
 import { render } from "ink";
 import React from "react";
 import { DATA_DIR, DB_PATH, INSTALLED_MARKER } from "./config.ts";
 import { createDb } from "./db/db.ts";
-import { killAll } from "./engine/pty.ts";
+import { createDaemonPtyBackend, type PtyBackend } from "./engine/ptyBackend.ts";
 import { createStatusStore } from "./engine/status.ts";
-import { startHookServer } from "./hookServer.ts";
 import { installClaudeHooks } from "./setup/installClaudeHooks.ts";
 import { createStore } from "./store/projects.ts";
 import { App } from "./ui/App.tsx";
@@ -22,6 +22,7 @@ import type { ExitAction } from "./ui/types.ts";
 async function runInkApp(
 	store: ReturnType<typeof createStore>,
 	status: ReturnType<typeof createStatusStore>,
+	backend: PtyBackend,
 	initialProjectId: string | undefined,
 ): Promise<ExitAction> {
 	let result: ExitAction = { type: "quit" };
@@ -31,7 +32,7 @@ async function runInkApp(
 		unmount();
 	};
 	const instance = render(
-		React.createElement(App, { store, status, requestExit, initialProjectId }),
+		React.createElement(App, { store, status, backend, requestExit, initialProjectId }),
 	);
 	unmount = instance.unmount;
 	await instance.waitUntilExit();
@@ -46,18 +47,23 @@ async function main() {
 		console.log(`[scion] installed Claude hooks; data dir ${DATA_DIR}`);
 	}
 
+	// PTYs and the hook receiver now live in a separate daemon process (auto-
+	// spawned here if not already running) — this process just reads/writes
+	// the DB and proxies terminal I/O to the daemon, so restarting it never
+	// kills a live agent.
 	const db = createDb(DB_PATH);
 	const status = createStatusStore(db);
-	const store = createStore(db, status);
-	const server = await startHookServer(status);
+	const backend = createDaemonPtyBackend();
+	const store = createStore(db, status, backend);
+
+	// The daemon's StatusStore is a separate object in a separate process —
+	// relay its push so this process's own status.events (which Dashboard
+	// already listens on) fires exactly as if the change happened locally.
+	backend.onStatusChanged((workspaceId) => status.events.emit("change", workspaceId));
 
 	const shutdown = () => {
-		try {
-			killAll();
-		} catch {}
-		try {
-			server.close();
-		} catch {}
+		// Deliberately no killAll() here — the daemon owns every live agent
+		// now, and restarting this process must not kill them.
 		process.exit(0);
 	};
 	process.on("SIGINT", shutdown);
@@ -65,10 +71,10 @@ async function main() {
 
 	let initialProjectId: string | undefined;
 	for (;;) {
-		const action = await runInkApp(store, status, initialProjectId);
+		const action = await runInkApp(store, status, backend, initialProjectId);
 		if (action.type === "quit") break;
 		if (action.type === "attach") {
-			await runAttach(action.terminalId);
+			await runAttach(action.terminalId, backend);
 			initialProjectId = action.projectId;
 		} else if (action.type === "diff") {
 			await runDiffPager(action.repoPath, action.worktreePath);

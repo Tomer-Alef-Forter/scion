@@ -28,7 +28,7 @@ import {
 	pruneEmptyWorktreeDirs,
 	removeOrphanedWorktree,
 } from "../engine/orphans.ts";
-import { getSession, listSessions } from "../engine/pty.ts";
+import type { PtyBackend } from "../engine/ptyBackend.ts";
 import type { StatusStore } from "../engine/status.ts";
 import {
 	addWorktree,
@@ -91,7 +91,7 @@ async function listBranchNames(repoPath: string): Promise<string[]> {
 	return raw.trim().split("\n").filter(Boolean);
 }
 
-export function createStore(db: Db, status: StatusStore): Store {
+export function createStore(db: Db, status: StatusStore, backend: PtyBackend): Store {
 	return {
 		listProjects() {
 			return db.select().from(projects).all();
@@ -197,7 +197,8 @@ export function createStore(db: Db, status: StatusStore): Store {
 			};
 			db.insert(workspaces).values(workspace).run();
 
-			const { terminalId } = launchAgent({
+			const { terminalId } = await launchAgent({
+				backend,
 				agentType: defaultAgent,
 				workspaceId: workspace.id,
 				worktreePath,
@@ -213,8 +214,10 @@ export function createStore(db: Db, status: StatusStore): Store {
 				})
 				.run();
 
-			// When the PTY exits, drop the agent-status binding.
-			getSession(terminalId)?.onExit(() => status.markExited(terminalId));
+			// PTY-exit -> markExited is now wired by the daemon itself (it's the
+			// one process that actually owns the session for its whole
+			// lifetime, not just while this call is in flight) — see
+			// daemon/socketServer.ts's spawn handler.
 
 			return { workspace, terminalId };
 		},
@@ -228,7 +231,7 @@ export function createStore(db: Db, status: StatusStore): Store {
 			if (!workspace) throw new Error("Workspace not found");
 
 			// Already has a live terminal — nothing to resume.
-			const live = listSessions(workspaceId).find((s) => !s.exited);
+			const live = (await backend.listSessions(workspaceId)).find((s) => !s.exited);
 			if (live) return { terminalId: live.id };
 
 			// Reuse the most recent Claude session_id captured from the lifecycle
@@ -248,7 +251,8 @@ export function createStore(db: Db, status: StatusStore): Store {
 				db.delete(terminalSessions).where(eq(terminalSessions.id, session.id)).run();
 			}
 
-			const { terminalId } = launchAgent({
+			const { terminalId } = await launchAgent({
+				backend,
 				agentType: workspace.agentType,
 				workspaceId,
 				worktreePath: workspace.worktreePath,
@@ -265,7 +269,7 @@ export function createStore(db: Db, status: StatusStore): Store {
 				})
 				.run();
 
-			getSession(terminalId)?.onExit(() => status.markExited(terminalId));
+			// PTY-exit -> markExited: daemon-owned now, see createWorkspace above.
 
 			return { terminalId };
 		},
@@ -296,7 +300,7 @@ export function createStore(db: Db, status: StatusStore): Store {
 				.from(terminalSessions)
 				.where(eq(terminalSessions.workspaceId, workspaceId))
 				.all()) {
-				getSession(session.id)?.kill();
+				await backend.killSession(session.id);
 			}
 
 			if (project) {

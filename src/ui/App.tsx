@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import type { PtyBackend } from "../engine/ptyBackend.ts";
 import type { StatusStore } from "../engine/status.ts";
 import type { Store } from "../store/projects.ts";
 import { CreateWorkspace } from "./screens/CreateWorkspace.tsx";
@@ -14,11 +15,12 @@ type View =
 interface Props {
 	store: Store;
 	status: StatusStore;
+	backend: PtyBackend;
 	requestExit: (action: ExitAction) => void;
 	initialProjectId?: string;
 }
 
-export function App({ store, status, requestExit, initialProjectId }: Props) {
+export function App({ store, status, backend, requestExit, initialProjectId }: Props) {
 	const [view, setView] = useState<View>(
 		initialProjectId
 			? { name: "dashboard", projectId: initialProjectId }
@@ -40,6 +42,7 @@ export function App({ store, status, requestExit, initialProjectId }: Props) {
 			<Dashboard
 				store={store}
 				status={status}
+				backend={backend}
 				projectId={view.projectId}
 				onBack={() => setView({ name: "projects" })}
 				onCreate={() => setView({ name: "create", projectId: view.projectId })}

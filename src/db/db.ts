@@ -15,12 +15,18 @@ const MIGRATIONS_FOLDER = fileURLToPath(
 	new URL("../../drizzle", import.meta.url),
 );
 
-export function createDb(dbPath: string) {
+export function createDb(dbPath: string, opts: { reconcile?: boolean } = {}) {
 	mkdirSync(dirname(dbPath), { recursive: true });
 
 	const sqlite = new Database(dbPath);
 	sqlite.pragma("journal_mode = WAL");
 	sqlite.pragma("foreign_keys = ON");
+	// The daemon and front-end(s) now open this file concurrently — without a
+	// busy timeout, a writer colliding with another process's write throws
+	// SQLITE_BUSY immediately instead of waiting. Writes here are small and
+	// infrequent, so a generous wait is cheap and avoids surfacing that as a
+	// user-facing error.
+	sqlite.pragma("busy_timeout = 5000");
 
 	const db = drizzle(sqlite, { schema });
 
@@ -31,16 +37,19 @@ export function createDb(dbPath: string) {
 		throw error;
 	}
 
-	// PTYs never survive a restart (no background daemon), so any session row
-	// still marked "active" from a previous run is definitionally dead the
-	// moment we boot — fix the bookkeeping now rather than leaving the DB
-	// claiming a live process that no longer exists. `terminal_agent_bindings`
-	// are left untouched: resumeWorkspace still needs their captured
-	// agentSessionId to `--resume` the same conversation later.
-	db.update(schema.terminalSessions)
-		.set({ status: "ended", endedAt: Date.now() })
-		.where(eq(schema.terminalSessions.status, "active"))
-		.run();
+	// PTYs now live in the daemon, not whichever process opens the DB — a
+	// front-end restarting must NOT touch this, or it would mark the
+	// daemon's still-live sessions "ended" out from under it. Only the daemon
+	// (the one process that actually owns PTY lifecycle, and whose own
+	// restart really does mean every session died) opts in.
+	// `terminal_agent_bindings` are left untouched either way: resumeWorkspace
+	// still needs their captured agentSessionId to `--resume` later.
+	if (opts.reconcile) {
+		db.update(schema.terminalSessions)
+			.set({ status: "ended", endedAt: Date.now() })
+			.where(eq(schema.terminalSessions.status, "active"))
+			.run();
+	}
 
 	return db;
 }

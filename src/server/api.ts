@@ -6,7 +6,7 @@ import type { AgentType, EditorType, Project, Workspace } from "../db/schema.ts"
 import { getCachedDiffSummary, getUnifiedDiff, invalidateDiffCache } from "../engine/diff.ts";
 import { listFiles, readWorktreeFile } from "../engine/files.ts";
 import { mergeBack } from "../engine/mergeBack.ts";
-import { listSessions } from "../engine/pty.ts";
+import type { PtyBackend } from "../engine/ptyBackend.ts";
 import type { StatusStore } from "../engine/status.ts";
 import { openInEditor } from "../lib/openInEditor.ts";
 import type { Store } from "../store/projects.ts";
@@ -17,6 +17,7 @@ const EDITOR_TYPES: EditorType[] = ["vscode", "cursor", "zed"];
 export interface ApiDeps {
 	store: Store;
 	status: StatusStore;
+	backend: PtyBackend;
 }
 
 function expandHome(path: string): string {
@@ -41,10 +42,11 @@ function resolveWorkspace(store: Store, workspaceId: string) {
 // for every other workspace in the project.
 async function enrichWorkspace(
 	status: StatusStore,
+	backend: PtyBackend,
 	project: Project,
 	workspace: Workspace,
 ) {
-	const liveSessions = listSessions(workspace.id).filter((s) => !s.exited);
+	const liveSessions = (await backend.listSessions(workspace.id)).filter((s) => !s.exited);
 	const diff = await getCachedDiffSummary(
 		project.repoPath,
 		workspace.worktreePath,
@@ -75,7 +77,7 @@ async function enrichWorkspace(
 	};
 }
 
-export function createApiRoutes({ store, status }: ApiDeps): Hono {
+export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 	const api = new Hono();
 
 	api.get("/health", (c) => c.json({ ok: true }));
@@ -137,7 +139,7 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 		const enriched = await Promise.all(
 			store
 				.listWorkspaces(projectId)
-				.map((workspace) => enrichWorkspace(status, project, workspace)),
+				.map((workspace) => enrichWorkspace(status, backend, project, workspace)),
 		);
 		return c.json(enriched);
 	});
@@ -148,7 +150,7 @@ export function createApiRoutes({ store, status }: ApiDeps): Hono {
 	api.get("/workspaces/:id", async (c) => {
 		const resolved = resolveWorkspace(store, c.req.param("id"));
 		if (!resolved) return c.json({ error: "Workspace not found" }, 404);
-		const enriched = await enrichWorkspace(status, resolved.project, resolved.workspace);
+		const enriched = await enrichWorkspace(status, backend, resolved.project, resolved.workspace);
 		return c.json(enriched);
 	});
 

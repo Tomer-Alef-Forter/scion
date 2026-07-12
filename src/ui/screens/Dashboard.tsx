@@ -3,7 +3,7 @@ import React, { useEffect, useReducer, useState } from "react";
 import type { DiffSummary } from "../../engine/diff.ts";
 import { getCachedDiffSummary, invalidateDiffCache } from "../../engine/diff.ts";
 import { mergeBack } from "../../engine/mergeBack.ts";
-import { listSessions as ptyListSessions } from "../../engine/pty.ts";
+import type { PtyBackend, SessionInfo } from "../../engine/ptyBackend.ts";
 import type { AgentStatus, StatusStore } from "../../engine/status.ts";
 import { openInEditor } from "../../lib/openInEditor.ts";
 import type { Store } from "../../store/projects.ts";
@@ -12,6 +12,7 @@ import type { ExitAction } from "../types.ts";
 interface Props {
 	store: Store;
 	status: StatusStore;
+	backend: PtyBackend;
 	projectId: string;
 	onBack: () => void;
 	onCreate: () => void;
@@ -31,16 +32,18 @@ const STATUS_COLOR: Record<AgentStatus | "starting" | "done", string> = {
 export function Dashboard({
 	store,
 	status,
+	backend,
 	projectId,
 	onBack,
 	onCreate,
 	requestExit,
 }: Props) {
-	const [, refresh] = useReducer((x: number) => x + 1, 0);
+	const [tick, refresh] = useReducer((x: number) => x + 1, 0);
 	const [index, setIndex] = useState(0);
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState("");
 	const [summaries, setSummaries] = useState<Record<string, DiffSummary>>({});
+	const [liveSessions, setLiveSessions] = useState<Record<string, SessionInfo[]>>({});
 
 	const project = store.getProject(projectId);
 	const workspaces = store.listWorkspaces(projectId);
@@ -73,6 +76,25 @@ export function Dashboard({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [workspaces.length, project?.repoPath]);
 
+	// Live session lookups now go through the daemon (a real round trip), so
+	// they're fetched off the render path on the same cadence as everything
+	// else above, and read back synchronously from this cache — same pattern
+	// as `summaries`.
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			const next: Record<string, SessionInfo[]> = {};
+			for (const ws of workspaces) {
+				next[ws.id] = await backend.listSessions(ws.id);
+			}
+			if (!cancelled) setLiveSessions(next);
+		})();
+		return () => {
+			cancelled = true;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [tick, workspaces.length, backend]);
+
 	function statusFor(workspaceId: string): {
 		label: AgentStatus | "starting" | "done";
 	} {
@@ -80,14 +102,14 @@ export function Dashboard({
 		// app exits before node-pty's async onExit — which calls
 		// status.markExited — has a chance to fire), so a dead workspace must
 		// always report "done", never a stale status from that leftover row.
-		const live = ptyListSessions(workspaceId).some((s) => !s.exited);
+		const live = (liveSessions[workspaceId] ?? []).some((s) => !s.exited);
 		if (!live) return { label: "done" };
 		const bindings = status.listByWorkspace(workspaceId);
 		return { label: bindings[0]?.status ?? "starting" };
 	}
 
 	function liveTerminal(workspaceId: string): string | undefined {
-		return ptyListSessions(workspaceId).find((s) => !s.exited)?.id;
+		return (liveSessions[workspaceId] ?? []).find((s) => !s.exited)?.id;
 	}
 
 	const selected = workspaces[index];

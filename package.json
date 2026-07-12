@@ -14,6 +14,7 @@
     "web:smoke": "tsx scripts/run-isolated.ts scripts/web-smoke.ts",
     "db:generate": "drizzle-kit generate",
     "smoke": "tsx scripts/run-isolated.ts scripts/smoke.ts",
+    "daemon-smoke": "tsx scripts/run-isolated.ts scripts/daemon-smoke.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

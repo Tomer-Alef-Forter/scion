@@ -5,6 +5,7 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { PtyBackend } from "../engine/ptyBackend.ts";
 import type { StatusStore } from "../engine/status.ts";
 import type { Store } from "../store/projects.ts";
 import { createApiRoutes } from "./api.ts";
@@ -14,11 +15,12 @@ import { createTerminalSocketHandlers } from "./ws-terminal.ts";
 export interface CreateServerAppArgs {
 	store: Store;
 	status: StatusStore;
+	backend: PtyBackend;
 }
 
 const LOCALHOST_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
-export function createServerApp({ store, status }: CreateServerAppArgs) {
+export function createServerApp({ store, status, backend }: CreateServerAppArgs) {
 	const app = new Hono();
 	const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
@@ -31,12 +33,12 @@ export function createServerApp({ store, status }: CreateServerAppArgs) {
 		}),
 	);
 
-	app.route("/api", createApiRoutes({ store, status }));
+	app.route("/api", createApiRoutes({ store, status, backend }));
 
 	app.get(
 		"/ws/terminal/:terminalId",
 		upgradeWebSocket((c) =>
-			createTerminalSocketHandlers(c.req.param("terminalId") ?? "", {
+			createTerminalSocketHandlers(c.req.param("terminalId") ?? "", backend, {
 				skipReplay: c.req.query("replay") === "0",
 			}),
 		),

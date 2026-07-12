@@ -16,6 +16,7 @@ import { getCachedDiffSummary, getDiffSummary, invalidateDiffCache } from "../sr
 import { listFiles, readWorktreeFile } from "../src/engine/files.ts";
 import { mergeBack } from "../src/engine/mergeBack.ts";
 import { getSession, killAll, spawnSession } from "../src/engine/pty.ts";
+import { inProcessPtyBackend } from "../src/engine/ptyBackend.ts";
 import { createStatusStore } from "../src/engine/status.ts";
 import { addWorktree, removeWorktree } from "../src/engine/worktrees.ts";
 import { startHookServer } from "../src/hookServer.ts";
@@ -57,7 +58,7 @@ async function main() {
 
 	const db = createDb(join(base, "host.db"));
 	const status = createStatusStore(db);
-	const store = createStore(db, status);
+	const store = createStore(db, status, inProcessPtyBackend);
 	const server = await startHookServer(status);
 
 	let wt: Awaited<ReturnType<typeof addWorktree>> | undefined;
@@ -333,9 +334,10 @@ async function main() {
 				endedAt: null,
 			})
 			.run();
-		// Simulate an app restart: open a fresh connection to the SAME db file —
-		// createDb's reconcile step should run again and fix the stale row.
-		const dbAfterRestart = createDb(join(base, "host.db"));
+		// Simulate a DAEMON restart (the only process that opts into reconcile
+		// now — see db.ts): open a fresh connection to the SAME db file with
+		// reconcile:true and confirm the stale row gets fixed.
+		const dbAfterRestart = createDb(join(base, "host.db"), { reconcile: true });
 		const reconciledRow = dbAfterRestart
 			.select()
 			.from(terminalSessions)
