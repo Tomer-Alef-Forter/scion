@@ -1,10 +1,21 @@
 import { useEffect, useState } from "react";
 import type { AgentType, EditorType, HostSettings } from "../../lib/api";
+import {
+	getPermissionState,
+	isNotificationsEnabled,
+	type NotificationPermissionState,
+	requestPermission,
+	setNotificationsEnabled,
+} from "../../lib/notifications";
 
 const AGENT_OPTIONS: { id: AgentType; label: string }[] = [
 	{ id: "claude", label: "Claude Code" },
 	{ id: "gemini", label: "Gemini CLI" },
 	{ id: "codex", label: "Codex" },
+	{ id: "cursor-agent", label: "Cursor Agent" },
+	{ id: "droid", label: "Droid" },
+	{ id: "opencode", label: "OpenCode" },
+	{ id: "copilot", label: "GitHub Copilot" },
 ];
 
 const EDITOR_OPTIONS: { id: EditorType; label: string }[] = [
@@ -38,6 +49,24 @@ export function SettingsModal({
 }: SettingsModalProps) {
 	const [defaultAgent, setDefaultAgent] = useState<AgentType>(settings.defaultAgent);
 	const [defaultEditor, setDefaultEditor] = useState<EditorType>(settings.defaultEditor);
+	const [notificationsOn, setNotificationsOn] = useState(isNotificationsEnabled());
+	const [permissionState, setPermissionState] = useState<NotificationPermissionState>(
+		getPermissionState(),
+	);
+
+	async function handleToggleNotifications() {
+		if (notificationsOn) {
+			setNotificationsEnabled(false);
+			setNotificationsOn(false);
+			return;
+		}
+		const granted = await requestPermission();
+		setPermissionState(getPermissionState());
+		if (granted) {
+			setNotificationsEnabled(true);
+			setNotificationsOn(true);
+		}
+	}
 
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
@@ -145,6 +174,31 @@ export function SettingsModal({
 								className="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-50"
 							>
 								Stop all agents
+							</button>
+						</div>
+					</div>
+
+					<div className="mt-4 border-t border-border pt-3">
+						<label className="mb-1 block text-xs font-medium text-muted-foreground">
+							Notifications
+						</label>
+						<div className="flex items-center justify-between gap-2">
+							<p className="text-xs text-muted-foreground">
+								{permissionState === "denied"
+									? "Blocked by the browser — check this site's notification permission."
+									: permissionState === "unsupported"
+										? "Not supported in this browser."
+										: notificationsOn
+											? "On — you'll be notified when an agent needs input or finishes, in any project."
+											: "Get notified when an agent needs input or finishes a turn, even in another project."}
+							</p>
+							<button
+								type="button"
+								disabled={busy || permissionState === "unsupported" || permissionState === "denied"}
+								onClick={handleToggleNotifications}
+								className="shrink-0 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
+							>
+								{notificationsOn ? "Disable" : "Enable"}
 							</button>
 						</div>
 					</div>

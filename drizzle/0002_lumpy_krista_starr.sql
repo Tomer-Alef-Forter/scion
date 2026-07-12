@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `setup_command` text;

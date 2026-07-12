@@ -79,6 +79,43 @@ const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
 			return cleanPrompt ? [...base, cleanPrompt] : base;
 		},
 	},
+	// Cursor Agent, Droid, OpenCode, Copilot: commands/flags pulled from
+	// superset packages/shared/src/builtin-terminal-agents.ts (a real,
+	// shipped product's tested definitions) rather than guessed — but unlike
+	// Claude/Gemini/Codex above, none of these have a confirmed flag for
+	// skipping interactive approval verified against a live install here
+	// (Copilot's --allow-tool=write is the closest signal). Same honesty
+	// level as gemini/codex: best-effort, check `--help` if a launch hangs
+	// waiting on a prompt nobody's watching.
+	"cursor-agent": {
+		file: "cursor-agent",
+		buildArgv({ prompt }) {
+			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
+			return cleanPrompt ? [cleanPrompt] : [];
+		},
+	},
+	droid: {
+		file: "droid",
+		buildArgv({ prompt }) {
+			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
+			return cleanPrompt ? [cleanPrompt] : [];
+		},
+	},
+	opencode: {
+		file: "opencode",
+		buildArgv({ prompt }) {
+			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
+			return cleanPrompt ? ["--prompt", cleanPrompt] : [];
+		},
+	},
+	copilot: {
+		file: "copilot",
+		buildArgv({ prompt }) {
+			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
+			const base = ["--allow-tool=write"];
+			return cleanPrompt ? [...base, "-i", cleanPrompt] : base;
+		},
+	},
 };
 
 /**

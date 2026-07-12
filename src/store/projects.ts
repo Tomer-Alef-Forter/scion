@@ -29,6 +29,7 @@ import {
 	removeOrphanedWorktree,
 } from "../engine/orphans.ts";
 import type { PtyBackend } from "../engine/ptyBackend.ts";
+import { runSetupCommand } from "../engine/setupCommand.ts";
 import type { StatusStore } from "../engine/status.ts";
 import {
 	addWorktree,
@@ -41,6 +42,8 @@ export interface Store {
 	listProjects(): Project[];
 	addProject(repoPath: string): Promise<Project>;
 	removeProject(id: string): void;
+	/** Currently just the per-project setup command run on new workspaces. */
+	updateProject(id: string, patch: { setupCommand: string | null }): Project;
 	listWorkspaces(projectId: string): Workspace[];
 	getProject(id: string): Project | undefined;
 	getWorkspace(id: string): Workspace | undefined;
@@ -49,7 +52,7 @@ export interface Store {
 		projectId: string;
 		prompt: string;
 		name?: string;
-	}): Promise<{ workspace: Workspace; terminalId: string }>;
+	}): Promise<{ workspace: Workspace; terminalId: string; setupWarning?: string }>;
 	/**
 	 * Launch a fresh terminal in an EXISTING workspace's worktree — for when
 	 * its previous terminal ended (no background daemon keeps PTYs alive
@@ -132,6 +135,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 				repoPath: top,
 				defaultBranch,
 				worktreeBaseDir: null,
+				setupCommand: null,
 				createdAt: Date.now(),
 			};
 			db.insert(projects).values(row).run();
@@ -140,6 +144,13 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 
 		removeProject(id) {
 			db.delete(projects).where(eq(projects.id, id)).run();
+		},
+
+		updateProject(id, patch) {
+			db.update(projects).set(patch).where(eq(projects.id, id)).run();
+			const row = db.select().from(projects).where(eq(projects.id, id)).get();
+			if (!row) throw new Error("Project not found");
+			return row;
 		},
 
 		listWorkspaces(projectId) {
@@ -197,6 +208,15 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 			};
 			db.insert(workspaces).values(workspace).run();
 
+			// Standalone step, before the agent ever launches — see
+			// engine/setupCommand.ts for why this never touches the agent's own
+			// launch command. Non-blocking: proceeds to launch regardless.
+			let setupWarning: string | undefined;
+			if (project.setupCommand) {
+				const result = await runSetupCommand(worktreePath, project.setupCommand);
+				if (!result.ok) setupWarning = result.message;
+			}
+
 			const { terminalId } = await launchAgent({
 				backend,
 				agentType: defaultAgent,
@@ -219,7 +239,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 			// lifetime, not just while this call is in flight) — see
 			// daemon/socketServer.ts's spawn handler.
 
-			return { workspace, terminalId };
+			return { workspace, terminalId, setupWarning };
 		},
 
 		async resumeWorkspace({ workspaceId, prompt }) {

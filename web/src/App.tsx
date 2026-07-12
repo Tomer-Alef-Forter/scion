@@ -12,9 +12,10 @@ import { SettingsModal } from "./components/SettingsModal/SettingsModal";
 import { type WebTerminalHandle, WebTerminal } from "./components/WebTerminal";
 import { WorkspaceContextMenu } from "./components/WorkspaceGrid/WorkspaceContextMenu";
 import { WorkspaceGrid } from "./components/WorkspaceGrid/WorkspaceGrid";
-import { api, type HostSettings, type Project, type WorkspaceWithStatus } from "./lib/api";
+import { api, type AgentStatus, type HostSettings, type Project, type WorkspaceWithStatus } from "./lib/api";
 import { subscribeToStatusEvents } from "./lib/eventsSocket";
 import { isTypingTarget } from "./lib/keyboardShortcuts";
+import { notifyAgentAttention } from "./lib/notifications";
 import { cn } from "./lib/utils";
 
 // Code-split: @pierre/diffs (diff rendering) and the file browser/viewer
@@ -181,25 +182,57 @@ export function App() {
 			return;
 		}
 		refreshWorkspaces(selectedProjectId);
+		// Fallback: diff summaries (git state) aren't pushed — poll slowly.
+		const id = setInterval(() => refreshWorkspaces(selectedProjectId), DIFF_REFRESH_INTERVAL_MS);
+		return () => clearInterval(id);
+	}, [selectedProjectId, refreshWorkspaces]);
 
-		// Live: an agent status change names exactly one workspace — refetch
-		// just that one instead of recomputing every workspace's diff summary.
+	// Tracks status BY WORKSPACE ID ACROSS ALL PROJECTS (unlike `workspaces`
+	// state above, which only ever holds the selected project's rows) — the
+	// whole point of a notification is noticing something in a project you
+	// aren't currently looking at. One single /ws/events subscription for the
+	// app's lifetime (not scoped to selectedProjectId like the effect above),
+	// doing double duty: attention-tracking/notifying here, and patching the
+	// visible list via applyWorkspaceUpdate (which already safely no-ops for
+	// a workspace outside the current project).
+	const lastKnownStatusRef = useRef<Map<string, AgentStatus>>(new Map());
+	const attentionWorkspaceIdsRef = useRef<Set<string>>(new Set());
+
+	useEffect(() => {
+		function updateTabTitle() {
+			const n = attentionWorkspaceIdsRef.current.size;
+			document.title = n > 0 ? `(${n}) Scion` : "Scion";
+		}
 		const unsubscribe = subscribeToStatusEvents((workspaceId) => {
 			api
 				.getWorkspace(workspaceId)
-				.then(applyWorkspaceUpdate)
+				.then((updated) => {
+					const prevStatus = lastKnownStatusRef.current.get(updated.id);
+					if (updated.status === "waiting" || updated.status === "review") {
+						if (prevStatus !== updated.status) {
+							notifyAgentAttention(
+								{ id: updated.id, name: updated.name, status: updated.status },
+								() => selectProject(updated.projectId),
+							);
+						}
+						attentionWorkspaceIdsRef.current.add(updated.id);
+					} else {
+						attentionWorkspaceIdsRef.current.delete(updated.id);
+					}
+					lastKnownStatusRef.current.set(updated.id, updated.status);
+					updateTabTitle();
+					applyWorkspaceUpdate(updated);
+				})
 				.catch(() => {
 					// Benign race (e.g. workspace deleted concurrently) — the
-					// periodic poll below will reconcile either way.
+					// per-project poll reconciles the visible list either way.
 				});
 		});
-		// Fallback: diff summaries (git state) aren't pushed — poll slowly.
-		const id = setInterval(() => refreshWorkspaces(selectedProjectId), DIFF_REFRESH_INTERVAL_MS);
 		return () => {
 			unsubscribe();
-			clearInterval(id);
+			document.title = "Scion";
 		};
-	}, [selectedProjectId, refreshWorkspaces, applyWorkspaceUpdate]);
+	}, [applyWorkspaceUpdate]);
 
 	async function handleAddProject(repoPath: string) {
 		setBusy(true);
@@ -270,11 +303,21 @@ export function App() {
 			setSelectedWorkspaceId(result.workspace.id);
 			setActiveTab("terminal");
 			setOpenTerminal({ workspaceId: result.workspace.id, terminalId: result.terminalId });
+			if (result.setupWarning) setActionMessage(result.setupWarning);
 			refreshWorkspaces(selectedProjectId);
 		} catch (e) {
 			setModalError(String(e));
 		} finally {
 			setBusy(false);
+		}
+	}
+
+	async function handleUpdateSetupCommand(projectId: string, setupCommand: string) {
+		try {
+			const updated = await api.updateProjectSetupCommand(projectId, setupCommand);
+			setProjects((prev) => prev.map((p) => (p.id === projectId ? updated : p)));
+		} catch (e) {
+			setError(String(e));
 		}
 	}
 
@@ -355,6 +398,20 @@ export function App() {
 		}
 	}
 
+	async function handleCreatePr(ws: WorkspaceWithStatus) {
+		setBusy(true);
+		setActionMessage("Pushing branch and creating PR…");
+		try {
+			const { url } = await api.createPullRequest(ws.id);
+			setActionMessage(`PR ready: ${url}`);
+			window.open(url, "_blank");
+		} catch (e) {
+			setActionMessage(`Create PR failed: ${e instanceof Error ? e.message : e}`);
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	async function handleDelete(ws: WorkspaceWithStatus) {
 		setBusy(true);
 		try {
@@ -425,6 +482,11 @@ export function App() {
 						id: "open-editor",
 						label: `Open "${selectedWorkspace.name}" in editor`,
 						run: () => handleOpen(selectedWorkspace),
+					},
+					{
+						id: "create-pr",
+						label: `Create PR for "${selectedWorkspace.name}"`,
+						run: () => handleCreatePr(selectedWorkspace),
 					},
 				]
 			: []),
@@ -547,6 +609,11 @@ export function App() {
 				handleOpen(selectedWorkspace);
 				return;
 			}
+			if (e.key.toLowerCase() === "p") {
+				e.preventDefault();
+				handleCreatePr(selectedWorkspace);
+				return;
+			}
 			if (e.key.toLowerCase() === "r") {
 				e.preventDefault();
 				setContextMenu({
@@ -577,6 +644,7 @@ export function App() {
 				onSelect={selectProject}
 				onAdd={handleAddProject}
 				onRemove={handleRemoveProject}
+				onUpdateSetupCommand={handleUpdateSetupCommand}
 				onOpenSettings={openSettings}
 				busy={busy}
 			/>
@@ -627,6 +695,15 @@ export function App() {
 											className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
 										>
 											Open
+										</button>
+										<button
+											type="button"
+											disabled={busy}
+											title="Push branch + create PR (p)"
+											onClick={() => handleCreatePr(selectedWorkspace)}
+											className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
+										>
+											Create PR
 										</button>
 										<button
 											type="button"

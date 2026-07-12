@@ -7,6 +7,7 @@ export interface Project {
 	repoPath: string;
 	defaultBranch: string | null;
 	worktreeBaseDir: string | null;
+	setupCommand: string | null;
 	createdAt: number;
 }
 
@@ -18,7 +19,14 @@ export interface DiffSummary {
 }
 
 export type AgentStatus = "working" | "waiting" | "review" | "idle" | "starting" | "done";
-export type AgentType = "claude" | "gemini" | "codex";
+export type AgentType =
+	| "claude"
+	| "gemini"
+	| "codex"
+	| "cursor-agent"
+	| "droid"
+	| "opencode"
+	| "copilot";
 export type EditorType = "vscode" | "cursor" | "zed";
 
 export interface HostSettings {
@@ -54,6 +62,7 @@ export interface CreateWorkspaceResult {
 		createdAt: number;
 	};
 	terminalId: string;
+	setupWarning?: string;
 }
 
 export interface MergeResult {
@@ -115,6 +124,13 @@ export const api = {
 		}),
 	removeProject: (id: string) =>
 		request<{ ok: true }>(`/projects/${id}`, { method: "DELETE" }),
+	// setupCommand runs standalone in a new workspace's worktree, before the
+	// agent launches. Empty string clears it (server normalizes to null).
+	updateProjectSetupCommand: (id: string, setupCommand: string) =>
+		request<Project>(`/projects/${id}`, {
+			method: "PATCH",
+			body: JSON.stringify({ setupCommand }),
+		}),
 
 	listWorkspaces: (projectId: string) =>
 		request<WorkspaceWithStatus[]>(`/projects/${projectId}/workspaces`),
@@ -146,6 +162,10 @@ export const api = {
 	getDiff: (id: string) => requestText(`/workspaces/${id}/diff`),
 	merge: (id: string) =>
 		request<MergeResult>(`/workspaces/${id}/merge`, { method: "POST" }),
+	// Pushes the branch and opens a GitHub PR via `gh` (requires it installed
+	// + authenticated). Falls back to an existing PR's URL on a repeat call.
+	createPullRequest: (id: string) =>
+		request<{ url: string }>(`/workspaces/${id}/pr`, { method: "POST" }),
 	openInEditor: (id: string) =>
 		request<{ ok: true }>(`/workspaces/${id}/open`, { method: "POST" }),
 	markSeen: (id: string) =>

@@ -1,4 +1,4 @@
-import { Moon, Settings, Sun } from "lucide-react";
+import { Moon, Pencil, Settings, Sun } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { useTheme } from "../../lib/useTheme";
@@ -10,6 +10,7 @@ interface ProjectSidebarProps {
 	onSelect: (projectId: string) => void;
 	onAdd: (repoPath: string) => Promise<void>;
 	onRemove: (projectId: string) => void;
+	onUpdateSetupCommand: (projectId: string, setupCommand: string) => Promise<void>;
 	onOpenSettings: () => void;
 	busy: boolean;
 }
@@ -20,12 +21,21 @@ export function ProjectSidebar({
 	onSelect,
 	onAdd,
 	onRemove,
+	onUpdateSetupCommand,
 	onOpenSettings,
 	busy,
 }: ProjectSidebarProps) {
 	const [repoPathInput, setRepoPathInput] = useState("");
 	const [adding, setAdding] = useState(false);
+	const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+	const [setupCommandInput, setSetupCommandInput] = useState("");
 	const [theme, toggleTheme] = useTheme();
+
+	async function handleSaveSetupCommand(e: React.FormEvent, projectId: string) {
+		e.preventDefault();
+		await onUpdateSetupCommand(projectId, setupCommandInput.trim());
+		setEditingProjectId(null);
+	}
 
 	async function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
@@ -63,33 +73,93 @@ export function ProjectSidebar({
 			</div>
 			<div className="flex-1 overflow-y-auto p-2">
 				<ul className="space-y-0.5">
-					{projects.map((p) => (
-						<li key={p.id} className="group relative">
-							<button
-								type="button"
-								onClick={() => onSelect(p.id)}
-								className={cn(
-									"w-full rounded-md px-2.5 py-2 text-left text-sm transition-colors",
-									selectedProjectId === p.id
-										? "bg-sidebar-accent text-sidebar-accent-foreground"
-										: "hover:bg-sidebar-accent/50",
-								)}
-							>
-								<div className="truncate font-medium">{p.name}</div>
-								<div className="truncate text-xs text-muted-foreground">
-									{p.repoPath}
+					{projects.map((p) =>
+						editingProjectId === p.id ? (
+							<li key={p.id}>
+								<form
+									onSubmit={(e) => handleSaveSetupCommand(e, p.id)}
+									className="flex flex-col gap-1.5 rounded-md border border-sidebar-border p-2"
+								>
+									<label className="text-xs font-medium text-muted-foreground">
+										Setup command for {p.name}
+									</label>
+									<input
+										autoFocus
+										value={setupCommandInput}
+										onChange={(e) => setSetupCommandInput(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Escape") setEditingProjectId(null);
+										}}
+										placeholder="e.g. npm install (optional)"
+										className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
+									/>
+									<p className="text-[10px] text-muted-foreground">
+										Runs once in each new workspace's worktree, before the agent starts.
+									</p>
+									<div className="flex gap-1.5">
+										<button
+											type="submit"
+											disabled={busy}
+											className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+										>
+											Save
+										</button>
+										<button
+											type="button"
+											onClick={() => setEditingProjectId(null)}
+											className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+										>
+											Cancel
+										</button>
+									</div>
+								</form>
+							</li>
+						) : (
+							<li key={p.id} className="group relative">
+								<button
+									type="button"
+									onClick={() => onSelect(p.id)}
+									className={cn(
+										"w-full rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+										selectedProjectId === p.id
+											? "bg-sidebar-accent text-sidebar-accent-foreground"
+											: "hover:bg-sidebar-accent/50",
+									)}
+								>
+									<div className="truncate font-medium">{p.name}</div>
+									<div className="truncate text-xs text-muted-foreground">
+										{p.repoPath}
+									</div>
+									{p.setupCommand && (
+										<div className="truncate text-[10px] text-muted-foreground/70">
+											⚙ {p.setupCommand}
+										</div>
+									)}
+								</button>
+								<div className="absolute right-1.5 top-1.5 flex gap-0.5 opacity-0 group-hover:opacity-100">
+									<button
+										type="button"
+										onClick={() => {
+											setEditingProjectId(p.id);
+											setSetupCommandInput(p.setupCommand ?? "");
+										}}
+										title="Edit setup command"
+										className="rounded px-1 text-xs text-muted-foreground hover:bg-sidebar-accent"
+									>
+										<Pencil className="size-3" />
+									</button>
+									<button
+										type="button"
+										onClick={() => onRemove(p.id)}
+										title="Remove from list"
+										className="rounded px-1 text-xs text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+									>
+										✕
+									</button>
 								</div>
-							</button>
-							<button
-								type="button"
-								onClick={() => onRemove(p.id)}
-								title="Remove from list"
-								className="absolute right-1.5 top-1.5 rounded px-1 text-xs text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-							>
-								✕
-							</button>
-						</li>
-					))}
+							</li>
+						),
+					)}
 					{projects.length === 0 && (
 						<li className="px-2.5 py-2 text-xs text-muted-foreground">
 							No projects yet.

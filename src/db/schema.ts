@@ -18,6 +18,12 @@ export const projects = sqliteTable(
 		repoPath: text("repo_path").notNull(),
 		defaultBranch: text("default_branch"),
 		worktreeBaseDir: text("worktree_base_dir"),
+		// Run once, standalone, in a new workspace's worktree BEFORE the agent
+		// launches (e.g. `npm install`, `cp .env.example .env`) — see
+		// store/projects.ts's createWorkspace. Deliberately never interpolated
+		// into the agent's own launch command (no shell-escaping surface to
+		// get wrong); failure is non-blocking, surfaced as a warning only.
+		setupCommand: text("setup_command"),
 		createdAt: integer("created_at")
 			.notNull()
 			.$defaultFn(() => Date.now()),
@@ -92,7 +98,14 @@ export const terminalAgentBindings = sqliteTable(
 	],
 );
 
-export type AgentType = "claude" | "gemini" | "codex";
+export type AgentType =
+	| "claude"
+	| "gemini"
+	| "codex"
+	| "cursor-agent"
+	| "droid"
+	| "opencode"
+	| "copilot";
 export type EditorType = "vscode" | "cursor" | "zed";
 
 export const hostSettings = sqliteTable("host_settings", {

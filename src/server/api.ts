@@ -6,12 +6,21 @@ import type { AgentType, EditorType, Project, Workspace } from "../db/schema.ts"
 import { getCachedDiffSummary, getUnifiedDiff, invalidateDiffCache } from "../engine/diff.ts";
 import { listFiles, readWorktreeFile } from "../engine/files.ts";
 import { mergeBack } from "../engine/mergeBack.ts";
+import { createPullRequest } from "../engine/pullRequest.ts";
 import type { PtyBackend } from "../engine/ptyBackend.ts";
 import type { StatusStore } from "../engine/status.ts";
 import { openInEditor } from "../lib/openInEditor.ts";
 import type { Store } from "../store/projects.ts";
 
-const AGENT_TYPES: AgentType[] = ["claude", "gemini", "codex"];
+const AGENT_TYPES: AgentType[] = [
+	"claude",
+	"gemini",
+	"codex",
+	"cursor-agent",
+	"droid",
+	"opencode",
+	"copilot",
+];
 const EDITOR_TYPES: EditorType[] = ["vscode", "cursor", "zed"];
 
 export interface ApiDeps {
@@ -144,6 +153,21 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 		return c.json({ ok: true });
 	});
 
+	// setupCommand runs standalone in a new workspace's worktree, before the
+	// agent launches — see engine/setupCommand.ts.
+	api.patch("/projects/:id", async (c) => {
+		const body = await c.req.json().catch(() => ({}));
+		const raw = typeof body.setupCommand === "string" ? body.setupCommand.trim() : "";
+		try {
+			const project = store.updateProject(c.req.param("id"), {
+				setupCommand: raw ? raw : null,
+			});
+			return c.json(project);
+		} catch (err) {
+			return c.json({ error: errMsg(err) }, 400);
+		}
+	});
+
 	// ---- workspaces (listed/created under a project) ----
 
 	api.get("/projects/:id/workspaces", async (c) => {
@@ -243,6 +267,20 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 		});
 		invalidateDiffCache(resolved.workspace.worktreePath);
 		return c.json(result);
+	});
+
+	api.post("/workspaces/:id/pr", async (c) => {
+		const resolved = resolveWorkspace(store, c.req.param("id"));
+		if (!resolved) return c.json({ error: "Workspace not found" }, 404);
+		try {
+			const result = await createPullRequest({
+				worktreePath: resolved.workspace.worktreePath,
+				branch: resolved.workspace.branch,
+			});
+			return c.json(result);
+		} catch (err) {
+			return c.json({ error: errMsg(err) }, 400);
+		}
 	});
 
 	api.post("/workspaces/:id/open", async (c) => {

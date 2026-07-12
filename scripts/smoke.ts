@@ -278,6 +278,42 @@ async function main() {
 				JSON.stringify(["--dangerously-bypass-approvals-and-sandbox", "fix bug"]),
 		);
 
+		// ---- buildAgentArgv: newer presets (real commands from superset's
+		// builtin-terminal-agents.ts, not guessed — see agents.ts's comment) ----
+
+		check(
+			"buildAgentArgv(cursor-agent): prompt as bare positional",
+			JSON.stringify(buildAgentArgv("cursor-agent", { prompt: "fix bug" })) ===
+				JSON.stringify(["fix bug"]),
+		);
+		check(
+			"buildAgentArgv(cursor-agent): no prompt -> empty argv",
+			JSON.stringify(buildAgentArgv("cursor-agent", {})) === JSON.stringify([]),
+		);
+		check(
+			"buildAgentArgv(droid): prompt as bare positional",
+			JSON.stringify(buildAgentArgv("droid", { prompt: "fix bug" })) ===
+				JSON.stringify(["fix bug"]),
+		);
+		check(
+			"buildAgentArgv(opencode): --prompt flag",
+			JSON.stringify(buildAgentArgv("opencode", { prompt: "fix bug" })) ===
+				JSON.stringify(["--prompt", "fix bug"]),
+		);
+		check(
+			"buildAgentArgv(opencode): no prompt -> empty argv",
+			JSON.stringify(buildAgentArgv("opencode", {})) === JSON.stringify([]),
+		);
+		check(
+			"buildAgentArgv(copilot): allow-tool flag, prompt via -i",
+			JSON.stringify(buildAgentArgv("copilot", { prompt: "fix bug" })) ===
+				JSON.stringify(["--allow-tool=write", "-i", "fix bug"]),
+		);
+		check(
+			"buildAgentArgv(copilot): no prompt omits -i",
+			JSON.stringify(buildAgentArgv("copilot", {})) === JSON.stringify(["--allow-tool=write"]),
+		);
+
 		// ---- host settings: default agent is captured onto the workspace ----
 
 		const defaultSettings = store.getSettings();
@@ -377,6 +413,44 @@ async function main() {
 			"deleteWorkspace with force:true removes it anyway",
 			!existsSync(dirtyWs.workspace.worktreePath),
 		);
+
+		// ---- per-project setup command: runs standalone before the agent
+		// launches, non-blocking on failure (see engine/setupCommand.ts) ----
+
+		store.updateProject(project.id, { setupCommand: "touch setup-ran.txt" });
+		const setupOkWs = await store.createWorkspace({
+			projectId: project.id,
+			prompt: "setup command smoke test",
+		});
+		getSession(setupOkWs.terminalId)?.kill();
+		check(
+			"setupCommand runs in the new worktree before the agent launches",
+			existsSync(join(setupOkWs.workspace.worktreePath, "setup-ran.txt")) &&
+				setupOkWs.setupWarning === undefined,
+		);
+		await store.deleteWorkspace({
+			workspaceId: setupOkWs.workspace.id,
+			deleteBranch: true,
+			force: true,
+		});
+
+		store.updateProject(project.id, { setupCommand: "exit 1" });
+		const setupFailWs = await store.createWorkspace({
+			projectId: project.id,
+			prompt: "setup command failure smoke test",
+		});
+		getSession(setupFailWs.terminalId)?.kill();
+		check(
+			"a failing setupCommand doesn't block workspace creation, just warns",
+			existsSync(setupFailWs.workspace.worktreePath) &&
+				!!setupFailWs.setupWarning?.includes("Setup command failed"),
+		);
+		await store.deleteWorkspace({
+			workspaceId: setupFailWs.workspace.id,
+			deleteBranch: true,
+			force: true,
+		});
+		store.updateProject(project.id, { setupCommand: null });
 
 		// ---- orphaned worktrees: detection walks nested branch dirs correctly
 		// (a slash in the branch name nests the worktree deeper than a naive
