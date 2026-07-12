@@ -1,6 +1,6 @@
-// Pruned copy of superset's host-service Drizzle schema
-// (~/Projects/superset/packages/host-service/src/db/schema.ts).
-// Dropped: pullRequests, workspaceCloudDeletes, and cloud-sync columns.
+// Drizzle schema for Scion's local SQLite DB: projects, their workspaces,
+// terminal sessions, and the agent-status bindings derived from hook events.
+// Deliberately no cloud-sync tables — everything here is local-only.
 import { sql } from "drizzle-orm";
 import {
 	index,

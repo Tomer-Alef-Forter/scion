@@ -1,5 +1,7 @@
-// Local merge-back — NEW logic (superset only merges via `gh pr merge`).
-// Merges a worktree branch into its base branch in the MAIN repo checkout.
+// Local merge-back: merges a worktree branch into its base branch in the
+// MAIN repo checkout, entirely offline (no GitHub round-trip). Useful when
+// you don't want a PR for a given change — see pullRequest.ts for the
+// alternative that does go through `gh pr create`/`merge`.
 import { createUserSimpleGit } from "./gitClient.ts";
 import { getBaseBranch, isClean } from "./diff.ts";
 

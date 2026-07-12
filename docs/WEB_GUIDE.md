@@ -38,7 +38,7 @@ React 18).
 ## 3. Install & run
 
 ```bash
-cd ~/Projects/superset-local
+cd ~/Projects/scion
 bun install
 bun run db:generate   # once — produces the SQLite migrations
 ```
@@ -211,10 +211,10 @@ worktrees.
 
 ---
 
-## 10. Limitations (vs real Superset, and vs the terminal UI)
+## 10. Limitations (vs the terminal UI)
 
 - Everything in the terminal UI's
-  [Limitations](./USER_GUIDE.md#10-limitations-vs-real-superset) applies here
+  [Limitations](./USER_GUIDE.md#10-limitations) applies here
   too (no PTY persistence across a restart, no PR review, no cloud sync, no
   multi-agent presets).
 - **One front end at a time** — see the callout in §3.

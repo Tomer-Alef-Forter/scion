@@ -1,17 +1,21 @@
-// Lifted from Superset's real web terminal client:
-// apps/web/src/app/workspaces/[workspaceId]/components/WebTerminal/TerminalConnection.ts
-// See NOTICE.md for attribution. ONLY `buildUrl()` is rewritten (no auth
-// token / relay — this is a local, single-user server); reconnect/backoff,
-// visibility-resume, and the binary/JSON framing are unchanged.
+// Client for a workspace's terminal WebSocket: owns the reconnect lifecycle
+// (exponential backoff, pausing while the tab is hidden, resuming on
+// visibility/focus/online) so WebTerminal.tsx just gets a steady stream of
+// bytes/control messages and never has to think about a dropped connection.
+//
+// Built as a plain factory function returning {send, dispose} — the same
+// connect-with-a-reconnect-timer shape as lib/eventsSocket.ts — plus the
+// extra state this stream actually needs that a "just refetch on change"
+// signal doesn't: a generation counter (so a stale in-flight connect() from
+// before a reconnect can't clobber a newer socket), and a `terminated` flag
+// once the PTY itself has exited (no point reconnecting to a dead process).
 export type TerminalConnectionState = "connecting" | "reconnecting" | "error";
 
-type TerminalServerMessage =
+export type TerminalControlMessage =
 	| { type: "attached"; terminalId: string }
 	| { type: "title"; title: string | null }
 	| { type: "error"; message: string }
 	| { type: "exit"; exitCode: number; signal: number };
-
-export type TerminalControlMessage = TerminalServerMessage;
 
 type TerminalClientMessage =
 	| { type: "input"; data: string }
@@ -28,198 +32,179 @@ interface TerminalConnectionHandlers {
 	onStateChange: (state: TerminalConnectionState) => void;
 }
 
-const BASE_RECONNECT_DELAY_MS = 500;
+export interface TerminalConnection {
+	send(message: TerminalClientMessage): void;
+	dispose(): void;
+}
+
+const INITIAL_RECONNECT_DELAY_MS = 500;
 const MAX_RECONNECT_DELAY_MS = 10_000;
 const MAX_RECONNECT_ATTEMPTS = 12;
 
-// Owns the terminal WebSocket lifecycle: exponential-backoff reconnect on an
-// unexpected close, plus page-visibility recovery. The server keys sessions
-// by terminalId and replays scrollback on (re)connect, so reopening the same
-// URL resumes the session.
-export class TerminalConnection {
-	private readonly target: TerminalConnectionTarget;
-	private readonly handlers: TerminalConnectionHandlers;
-	private socket: WebSocket | null = null;
-	private state: TerminalConnectionState = "connecting";
-	private generation = 0;
-	private reconnectAttempt = 0;
-	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-	private hasReceivedBytes = false;
-	private everAttached = false;
-	private terminated = false;
-	private disposed = false;
+// Same-origin `/ws/terminal/:terminalId` — no auth token or relay hop, since
+// this server only ever talks to the one local user running it.
+function buildTerminalUrl(target: TerminalConnectionTarget, skipReplay: boolean): string {
+	const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+	const url = new URL(
+		`${protocol}://${window.location.host}/ws/terminal/${encodeURIComponent(target.terminalId)}`,
+	);
+	url.searchParams.set("workspaceId", target.workspaceId);
+	// xterm already holds the scrollback locally on a reconnect — skip the
+	// server's replay dump once we know we've already gotten it once.
+	if (skipReplay) url.searchParams.set("replay", "0");
+	return url.toString();
+}
 
-	constructor(
-		target: TerminalConnectionTarget,
-		handlers: TerminalConnectionHandlers,
-	) {
-		this.target = target;
-		this.handlers = handlers;
+export function createTerminalConnection(
+	target: TerminalConnectionTarget,
+	handlers: TerminalConnectionHandlers,
+): TerminalConnection {
+	let socket: WebSocket | null = null;
+	let state: TerminalConnectionState = "connecting";
+	let generation = 0;
+	let reconnectAttempt = 0;
+	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	let hasReceivedBytes = false;
+	let everAttached = false;
+	let terminated = false;
+	let disposed = false;
+
+	function setState(next: TerminalConnectionState): void {
+		if (state === next) return;
+		state = next;
+		handlers.onStateChange(next);
 	}
 
-	start() {
-		if (typeof document !== "undefined") {
-			document.addEventListener("visibilitychange", this.handleResume);
-			document.addEventListener("resume", this.handleResume);
-		}
-		if (typeof window !== "undefined") {
-			window.addEventListener("pageshow", this.handleResume);
-			window.addEventListener("online", this.handleResume);
-		}
-		void this.connect();
+	function cancelReconnectTimer(): void {
+		if (reconnectTimer === null) return;
+		clearTimeout(reconnectTimer);
+		reconnectTimer = null;
 	}
 
-	dispose() {
-		this.disposed = true;
-		this.cancelReconnect();
-		if (typeof document !== "undefined") {
-			document.removeEventListener("visibilitychange", this.handleResume);
-			document.removeEventListener("resume", this.handleResume);
-		}
-		if (typeof window !== "undefined") {
-			window.removeEventListener("pageshow", this.handleResume);
-			window.removeEventListener("online", this.handleResume);
-		}
-		this.teardownSocket();
-	}
-
-	send(message: TerminalClientMessage) {
-		const socket = this.socket;
-		if (!socket || socket.readyState !== WebSocket.OPEN) return;
-		socket.send(JSON.stringify(message));
-	}
-
-	private connect = async () => {
-		if (this.disposed || this.terminated) return;
-		this.cancelReconnect();
-		this.teardownSocket();
-		const generation = ++this.generation;
-		this.emitState(this.everAttached ? "reconnecting" : "connecting");
-
-		const url = this.buildUrl();
-		if (generation !== this.generation || this.disposed || this.terminated) {
-			return;
-		}
-
-		let socket: WebSocket;
+	function teardownSocket(): void {
+		const current = socket;
+		socket = null;
+		if (!current) return;
+		current.onmessage = null;
+		current.onclose = null;
 		try {
-			socket = new WebSocket(url);
-		} catch {
-			this.scheduleReconnect();
-			return;
-		}
-		socket.binaryType = "arraybuffer";
-		this.socket = socket;
-		this.attachListeners(socket);
-	};
-
-	// Local server, no auth/relay: same-origin `/ws/terminal/:terminalId`
-	// (dev: proxied by Vite to the backend on :5177).
-	private buildUrl(): string {
-		const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-		const url = new URL(
-			`${protocol}://${window.location.host}/ws/terminal/${encodeURIComponent(this.target.terminalId)}`,
-		);
-		url.searchParams.set("workspaceId", this.target.workspaceId);
-		// Skip the scrollback re-dump on reconnect — xterm already holds it.
-		if (this.hasReceivedBytes) url.searchParams.set("replay", "0");
-		return url.toString();
-	}
-
-	private attachListeners(socket: WebSocket) {
-		socket.onmessage = (event) => {
-			if (this.socket !== socket) return;
-			if (event.data instanceof ArrayBuffer) {
-				this.hasReceivedBytes = true;
-				this.handlers.onBinary(new Uint8Array(event.data));
-				return;
-			}
-			let message: TerminalServerMessage;
-			try {
-				message = JSON.parse(String(event.data)) as TerminalServerMessage;
-			} catch {
-				return;
-			}
-			if (message.type === "attached") {
-				this.reconnectAttempt = 0;
-				this.everAttached = true;
-			} else if (message.type === "exit" || message.type === "error") {
-				this.terminated = true;
-				this.cancelReconnect();
-			}
-			this.handlers.onControl(message);
-		};
-
-		socket.onclose = () => {
-			if (this.socket !== socket) return;
-			this.socket = null;
-			if (this.terminated || this.disposed) return;
-			this.scheduleReconnect();
-		};
-	}
-
-	private teardownSocket() {
-		const socket = this.socket;
-		this.socket = null;
-		if (!socket) return;
-		socket.onmessage = null;
-		socket.onclose = null;
-		try {
-			socket.close();
+			current.close();
 		} catch {
 			// best-effort
 		}
 	}
 
-	private scheduleReconnect() {
-		if (this.reconnectTimer !== null) return;
-		if (this.terminated || this.disposed) return;
-		if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-			this.emitState("error");
+	function scheduleReconnect(): void {
+		if (reconnectTimer !== null || terminated || disposed) return;
+		if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+			setState("error");
 			return;
 		}
-		this.emitState("reconnecting");
-		// Frozen tabs don't run timers; the visibility listener reconnects on
-		// resume instead of burning the attempt budget on a timer that won't fire.
-		if (typeof document !== "undefined" && document.hidden) return;
+		setState("reconnecting");
+		// A backgrounded/frozen tab doesn't reliably run timers — the
+		// visibility/focus/online listeners below reconnect immediately on
+		// resume instead, so don't spend an attempt on a timer that may never
+		// actually fire.
+		if (document.hidden) return;
 
 		const delay = Math.min(
-			BASE_RECONNECT_DELAY_MS * 2 ** this.reconnectAttempt,
+			INITIAL_RECONNECT_DELAY_MS * 2 ** reconnectAttempt,
 			MAX_RECONNECT_DELAY_MS,
 		);
-		this.reconnectAttempt += 1;
-		this.reconnectTimer = setTimeout(() => {
-			this.reconnectTimer = null;
-			void this.connect();
+		reconnectAttempt += 1;
+		reconnectTimer = setTimeout(() => {
+			reconnectTimer = null;
+			connect();
 		}, delay);
 	}
 
-	private cancelReconnect() {
-		if (this.reconnectTimer !== null) {
-			clearTimeout(this.reconnectTimer);
-			this.reconnectTimer = null;
+	function connect(): void {
+		if (disposed || terminated) return;
+		cancelReconnectTimer();
+		teardownSocket();
+		const myGeneration = ++generation;
+		setState(everAttached ? "reconnecting" : "connecting");
+
+		let next: WebSocket;
+		try {
+			next = new WebSocket(buildTerminalUrl(target, hasReceivedBytes));
+		} catch {
+			scheduleReconnect();
+			return;
 		}
+		// dispose()/a newer connect() could have run synchronously above (they
+		// don't here, but nothing guarantees a future refactor keeps it that
+		// way) — bail rather than wire up listeners for a socket nobody wants.
+		if (myGeneration !== generation || disposed || terminated) {
+			next.close();
+			return;
+		}
+		next.binaryType = "arraybuffer";
+		socket = next;
+
+		next.onmessage = (event) => {
+			if (socket !== next) return;
+			if (event.data instanceof ArrayBuffer) {
+				hasReceivedBytes = true;
+				handlers.onBinary(new Uint8Array(event.data));
+				return;
+			}
+			let message: TerminalControlMessage;
+			try {
+				message = JSON.parse(String(event.data)) as TerminalControlMessage;
+			} catch {
+				return;
+			}
+			if (message.type === "attached") {
+				reconnectAttempt = 0;
+				everAttached = true;
+			} else if (message.type === "exit" || message.type === "error") {
+				terminated = true;
+				cancelReconnectTimer();
+			}
+			handlers.onControl(message);
+		};
+
+		next.onclose = () => {
+			if (socket !== next) return;
+			socket = null;
+			if (terminated || disposed) return;
+			scheduleReconnect();
+		};
 	}
 
-	private handleResume = () => {
-		if (this.disposed || this.terminated) return;
-		if (typeof document !== "undefined" && document.hidden) return;
-		this.reconnectAttempt = 0;
-		const socket = this.socket;
+	function resume(): void {
+		if (disposed || terminated || document.hidden) return;
+		reconnectAttempt = 0;
 		if (
 			socket &&
-			(socket.readyState === WebSocket.OPEN ||
-				socket.readyState === WebSocket.CONNECTING)
+			(socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
 		) {
 			return;
 		}
-		this.cancelReconnect();
-		void this.connect();
-	};
-
-	private emitState(state: TerminalConnectionState) {
-		if (this.state === state) return;
-		this.state = state;
-		this.handlers.onStateChange(state);
+		cancelReconnectTimer();
+		connect();
 	}
+
+	document.addEventListener("visibilitychange", resume);
+	document.addEventListener("resume", resume);
+	window.addEventListener("pageshow", resume);
+	window.addEventListener("online", resume);
+	connect();
+
+	return {
+		send(message) {
+			if (!socket || socket.readyState !== WebSocket.OPEN) return;
+			socket.send(JSON.stringify(message));
+		},
+		dispose() {
+			disposed = true;
+			cancelReconnectTimer();
+			document.removeEventListener("visibilitychange", resume);
+			document.removeEventListener("resume", resume);
+			window.removeEventListener("pageshow", resume);
+			window.removeEventListener("online", resume);
+			teardownSocket();
+		},
+	};
 }

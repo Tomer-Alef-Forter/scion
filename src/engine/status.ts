@@ -1,13 +1,17 @@
-// Agent status: SQLite-backed binding store (survives restart) + in-memory
-// cache + change events. Copied/adapted from superset host-service
-// terminal-agents/store.ts, events/map-event-type.ts, and the renderer's
-// deriveTerminalAgentStatus.ts.
+// Agent status: a SQLite-backed terminal↔workspace binding (survives a
+// daemon restart) plus an in-memory "last seen" timestamp and a change
+// event emitter the UI subscribes to.
 import { EventEmitter } from "node:events";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/db.ts";
 import { terminalAgentBindings } from "../db/schema.ts";
 
-// ---- event normalization (copied from events/map-event-type.ts) ----
+// ---- event normalization ----
+//
+// Every agent CLI (Claude Code, Codex, Gemini, ...) names its own lifecycle
+// hooks differently, and Claude Code itself has renamed a couple of these
+// over time — so we fold all the raw event names we've seen in the wild
+// into a small, fixed set of lifecycle buckets everything else works with.
 export type AgentLifecycleEventType =
 	| "Start"
 	| "Stop"
@@ -15,51 +19,84 @@ export type AgentLifecycleEventType =
 	| "Attached"
 	| "Detached";
 
+const EVENT_LIFECYCLE: Record<string, AgentLifecycleEventType> = {
+	// A terminal came alive / a session resumed.
+	SessionStart: "Attached",
+	sessionStart: "Attached",
+	session_start: "Attached",
+	Attached: "Attached",
+	attached: "Attached",
+
+	// The terminal process ended — drop the binding entirely.
+	SessionEnd: "Detached",
+	sessionEnd: "Detached",
+	session_end: "Detached",
+	Detached: "Detached",
+	detached: "Detached",
+
+	// The agent is actively working on something.
+	Start: "Start",
+	UserPromptSubmit: "Start",
+	userPromptSubmitted: "Start",
+	user_prompt_submit: "Start",
+	PostToolUse: "Start",
+	postToolUse: "Start",
+	post_tool_use: "Start",
+	PostToolUseFailure: "Start",
+	BeforeAgent: "Start",
+	AfterTool: "Start",
+	task_started: "Start",
+
+	// The agent is blocked on the user for input/approval.
+	PermissionRequest: "PermissionRequest",
+	Notification: "PermissionRequest",
+	PreToolUse: "PermissionRequest",
+	preToolUse: "PermissionRequest",
+	pre_tool_use: "PermissionRequest",
+	exec_approval_request: "PermissionRequest",
+	apply_patch_approval_request: "PermissionRequest",
+	request_user_input: "PermissionRequest",
+
+	// The agent finished its turn and is waiting for the next prompt.
+	Stop: "Stop",
+	stop: "Stop",
+	"agent-turn-complete": "Stop",
+	AfterAgent: "Stop",
+	task_complete: "Stop",
+};
+
 export function mapEventType(
 	eventType: string | undefined,
 ): AgentLifecycleEventType | null {
 	if (!eventType) return null;
-	if (["Attached", "attached", "SessionStart", "sessionStart", "session_start"].includes(eventType))
-		return "Attached";
-	if (["Detached", "detached", "SessionEnd", "sessionEnd", "session_end"].includes(eventType))
-		return "Detached";
-	if (
-		[
-			"Start", "UserPromptSubmit", "PostToolUse", "PostToolUseFailure",
-			"BeforeAgent", "AfterTool", "userPromptSubmitted", "user_prompt_submit",
-			"postToolUse", "post_tool_use", "task_started",
-		].includes(eventType)
-	)
-		return "Start";
-	if (
-		[
-			"PermissionRequest", "Notification", "PreToolUse", "preToolUse",
-			"pre_tool_use", "exec_approval_request", "apply_patch_approval_request",
-			"request_user_input",
-		].includes(eventType)
-	)
-		return "PermissionRequest";
-	if (["Stop", "stop", "agent-turn-complete", "AfterAgent", "task_complete"].includes(eventType))
-		return "Stop";
-	return null;
+	return EVENT_LIFECYCLE[eventType] ?? null;
 }
 
-// ---- derived UI status (copied from deriveTerminalAgentStatus.ts) ----
+// ---- derived UI status ----
 export type AgentStatus = "working" | "waiting" | "review" | "idle" | "gone";
 
+/**
+ * What the UI should show for a terminal, given its last lifecycle event and
+ * whether the user has looked at this workspace since. A finished turn
+ * ("Stop") the user hasn't seen yet is a "review" (needs attention); once
+ * seen (or if it never needed review) it settles to "idle".
+ */
 export function deriveStatus(
 	lastEventType: AgentLifecycleEventType | null | undefined,
 	lastEventAt: number,
 	lastSeenAt: number | undefined,
 ): AgentStatus {
-	if (lastEventType === "Start") return "working";
-	if (lastEventType === "PermissionRequest") return "waiting";
-	if (lastEventType === "Stop")
-		return lastEventAt > (lastSeenAt ?? 0) ? "review" : "idle";
-	return "idle";
+	switch (lastEventType) {
+		case "Start":
+			return "working";
+		case "PermissionRequest":
+			return "waiting";
+		case "Stop":
+			return lastEventAt > (lastSeenAt ?? 0) ? "review" : "idle";
+		default:
+			return "idle";
+	}
 }
-
-const EXIT_EVENTS: AgentLifecycleEventType[] = ["Detached"];
 
 export interface StatusStore {
 	events: EventEmitter;
@@ -83,10 +120,43 @@ export interface StatusStore {
 
 export function createStatusStore(db: Db): StatusStore {
 	const events = new EventEmitter();
-	const lastSeen = new Map<string, number>();
+	const lastSeenAt = new Map<string, number>();
 
-	function emitChange(workspaceId: string) {
-		events.emit("change", workspaceId);
+	const notify = (workspaceId: string) => events.emit("change", workspaceId);
+
+	function upsertBinding(input: {
+		terminalId: string;
+		workspaceId: string;
+		agentId: string;
+		agentSessionId?: string;
+		lifecycle: AgentLifecycleEventType;
+	}): void {
+		const now = Date.now();
+		const row = db
+			.select()
+			.from(terminalAgentBindings)
+			.where(eq(terminalAgentBindings.terminalId, input.terminalId))
+			.get();
+
+		if (row) {
+			db.update(terminalAgentBindings)
+				.set({ lastEventAt: now, lastEventType: input.lifecycle })
+				.where(eq(terminalAgentBindings.terminalId, input.terminalId))
+				.run();
+			return;
+		}
+
+		db.insert(terminalAgentBindings)
+			.values({
+				terminalId: input.terminalId,
+				workspaceId: input.workspaceId,
+				agentId: input.agentId || "claude",
+				agentSessionId: input.agentSessionId ?? null,
+				startedAt: now,
+				lastEventAt: now,
+				lastEventType: input.lifecycle,
+			})
+			.run();
 	}
 
 	return {
@@ -96,40 +166,16 @@ export function createStatusStore(db: Db): StatusStore {
 			const lifecycle = mapEventType(input.eventType);
 			if (!lifecycle) return;
 
-			if (EXIT_EVENTS.includes(lifecycle)) {
+			if (lifecycle === "Detached") {
 				db.delete(terminalAgentBindings)
 					.where(eq(terminalAgentBindings.terminalId, input.terminalId))
 					.run();
-				emitChange(input.workspaceId);
+				notify(input.workspaceId);
 				return;
 			}
 
-			const now = Date.now();
-			const existing = db
-				.select()
-				.from(terminalAgentBindings)
-				.where(eq(terminalAgentBindings.terminalId, input.terminalId))
-				.get();
-
-			if (existing) {
-				db.update(terminalAgentBindings)
-					.set({ lastEventAt: now, lastEventType: lifecycle })
-					.where(eq(terminalAgentBindings.terminalId, input.terminalId))
-					.run();
-			} else {
-				db.insert(terminalAgentBindings)
-					.values({
-						terminalId: input.terminalId,
-						workspaceId: input.workspaceId,
-						agentId: input.agentId || "claude",
-						agentSessionId: input.agentSessionId ?? null,
-						startedAt: now,
-						lastEventAt: now,
-						lastEventType: lifecycle,
-					})
-					.run();
-			}
-			emitChange(input.workspaceId);
+			upsertBinding({ ...input, lifecycle });
+			notify(input.workspaceId);
 		},
 
 		markExited(terminalId) {
@@ -138,35 +184,35 @@ export function createStatusStore(db: Db): StatusStore {
 				.from(terminalAgentBindings)
 				.where(eq(terminalAgentBindings.terminalId, terminalId))
 				.get();
+			if (!row) return;
 			db.delete(terminalAgentBindings)
 				.where(eq(terminalAgentBindings.terminalId, terminalId))
 				.run();
-			if (row) emitChange(row.workspaceId);
+			notify(row.workspaceId);
 		},
 
 		markSeen(workspaceId) {
-			lastSeen.set(workspaceId, Date.now());
-			emitChange(workspaceId);
+			lastSeenAt.set(workspaceId, Date.now());
+			notify(workspaceId);
 		},
 
 		listByWorkspace(workspaceId) {
+			const seenAt = lastSeenAt.get(workspaceId);
 			const rows = db
 				.select()
 				.from(terminalAgentBindings)
 				.where(eq(terminalAgentBindings.workspaceId, workspaceId))
 				.all();
-			const seen = lastSeen.get(workspaceId);
-			return rows.map((r) => ({
-				terminalId: r.terminalId,
-				lastEventType: r.lastEventType as AgentLifecycleEventType,
-				lastEventAt: r.lastEventAt,
-				status: deriveStatus(
-					r.lastEventType as AgentLifecycleEventType,
-					r.lastEventAt,
-					seen,
-				),
-				agentSessionId: r.agentSessionId,
-			}));
+			return rows.map((row) => {
+				const lastEventType = row.lastEventType as AgentLifecycleEventType;
+				return {
+					terminalId: row.terminalId,
+					lastEventType,
+					lastEventAt: row.lastEventAt,
+					status: deriveStatus(lastEventType, row.lastEventAt, seenAt),
+					agentSessionId: row.agentSessionId,
+				};
+			});
 		},
 	};
 }

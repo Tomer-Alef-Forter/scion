@@ -1,5 +1,5 @@
-// SQLite via better-sqlite3 + drizzle — the same stack superset's host-service
-// uses in production (packages/host-service/src/db/db.ts). Runs under Node.
+// SQLite via better-sqlite3 + drizzle, migrated on open. Runs under Node
+// (not Bun — better-sqlite3's native binding is built against Node's ABI).
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";

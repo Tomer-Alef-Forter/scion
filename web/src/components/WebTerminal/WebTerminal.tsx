@@ -1,37 +1,35 @@
-// Lifted from Superset's real web terminal:
-// apps/web/src/app/workspaces/[workspaceId]/components/WebTerminal/WebTerminal.tsx
-// See NOTICE.md for attribution. Dropped `MobileTerminalInput` (mobile-only,
-// not needed for a local desktop tool); everything else — xterm setup, theme,
-// fit/resize handling, connection wiring — is unchanged.
+// Renders a workspace's PTY as a real terminal in the browser via xterm.js,
+// wired up to the WebSocket bridge in lib/TerminalConnection.ts. No mobile
+// input handling here — this is a local desktop tool, not a responsive app.
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import type { ITheme } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { TerminalConnection } from "../../lib/TerminalConnection";
+import { createTerminalConnection, type TerminalConnection } from "../../lib/TerminalConnection";
 
 const TERMINAL_THEME: ITheme = {
-	background: "#151110",
-	foreground: "#eae8e6",
-	cursor: "#e07850",
-	cursorAccent: "#151110",
-	selectionBackground: "rgba(224, 120, 80, 0.25)",
-	black: "#151110",
-	red: "#dc6b6b",
-	green: "#7ec699",
-	yellow: "#e5c07b",
-	blue: "#61afef",
-	magenta: "#c678dd",
-	cyan: "#56b6c2",
-	white: "#eae8e6",
-	brightBlack: "#5c5856",
-	brightRed: "#e88888",
-	brightGreen: "#98d1a8",
-	brightYellow: "#ecd08f",
-	brightBlue: "#7ec0f5",
-	brightMagenta: "#d494e6",
-	brightCyan: "#73c7d3",
+	background: "#12161c",
+	foreground: "#dfe6ee",
+	cursor: "#5fb0e0",
+	cursorAccent: "#12161c",
+	selectionBackground: "rgba(95, 176, 224, 0.28)",
+	black: "#12161c",
+	red: "#e0666f",
+	green: "#8fbf7f",
+	yellow: "#e0b95f",
+	blue: "#5fa8e0",
+	magenta: "#b485d6",
+	cyan: "#5fc2c9",
+	white: "#dfe6ee",
+	brightBlack: "#5a6472",
+	brightRed: "#ed8891",
+	brightGreen: "#aad89e",
+	brightYellow: "#edd188",
+	brightBlue: "#8ac3ed",
+	brightMagenta: "#cba6e6",
+	brightCyan: "#8adbe0",
 	brightWhite: "#ffffff",
 };
 
@@ -184,7 +182,7 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 			resizeTimer = setTimeout(sendResize, 150);
 		};
 
-		const connection = new TerminalConnection(
+		const connection = createTerminalConnection(
 			{ workspaceId, terminalId },
 			{
 				onBinary: (bytes) => terminal.write(bytes),
@@ -213,7 +211,6 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 			},
 		);
 		connectionRef.current = connection;
-		connection.start();
 
 		terminal.onData((data) => {
 			connectionRef.current?.send({ type: "input", data });
@@ -249,7 +246,7 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 				{state !== "open" && (
 					<div
 						className="absolute inset-x-0 top-0 px-3 py-1 text-xs"
-						style={{ color: "#ecd08f" }}
+						style={{ color: TERMINAL_THEME.brightYellow }}
 					>
 						{state === "connecting"
 							? "Connecting…"

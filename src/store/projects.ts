@@ -1,7 +1,7 @@
 // Project + workspace controller: DB rows are authoritative, reconciled
 // against `git worktree list`. Wraps the engine (worktrees/agents/pty) so the
-// UI has a small, synchronous-feeling API. Mirrors the intent of superset's
-// workspaces.create / workspace.list, minus the cloud.
+// UI has a small, synchronous-feeling API for creating, listing, and tearing
+// down local workspaces.
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";

@@ -1,40 +1,40 @@
-// Copied from superset host-service runtime/git/simple-git.ts + shared
-// simple-git-options.ts. Superset is a local git client, so inherited user
-// git config/env is expected; simple-git 3.36 blocks these by default, so we
-// allow them centrally.
+// Wrapper around simple-git so every caller gets the same options instead of
+// each repeating them. We always run as the logged-in user against their own,
+// already-trusted repo (not an attacker-supplied one), so simple-git's
+// "unsafe operation" guards — added in its 3.x line to block things like
+// custom config paths, credential helpers, and hook paths by default — are
+// opt-outs we want everywhere, not something to remember per call.
 import simpleGit, { type SimpleGit, type SimpleGitOptions } from "simple-git";
 
-const SIMPLE_GIT_UNSAFE_OPTION_FLAGS = [
-	"allowUnsafeAlias",
-	"allowUnsafeAskPass",
-	"allowUnsafeConfigEnvCount",
-	"allowUnsafeConfigPaths",
-	"allowUnsafeCredentialHelper",
-	"allowUnsafeCustomBinary",
-	"allowUnsafeDiffExternal",
-	"allowUnsafeDiffTextConv",
-	"allowUnsafeEditor",
-	"allowUnsafeFilter",
-	"allowUnsafeFsMonitor",
-	"allowUnsafeGitProxy",
-	"allowUnsafeGpgProgram",
-	"allowUnsafeHooksPath",
-	"allowUnsafeMergeDriver",
-	"allowUnsafePack",
-	"allowUnsafePager",
-	"allowUnsafeProtocolOverride",
-	"allowUnsafeSshCommand",
-	"allowUnsafeTemplateDir",
-] as const;
+// Every `allowUnsafe*` flag simple-git's `unsafe` options currently expose,
+// flipped on as a single object literal (easy to spot and flip back off
+// individually if one of these ever needs tightening again).
+const UNSAFE_OPTIONS: Partial<SimpleGitOptions> = {
+	unsafe: {
+		allowUnsafeAlias: true,
+		allowUnsafeAskPass: true,
+		allowUnsafeConfigEnvCount: true,
+		allowUnsafeConfigPaths: true,
+		allowUnsafeCredentialHelper: true,
+		allowUnsafeCustomBinary: true,
+		allowUnsafeDiffExternal: true,
+		allowUnsafeDiffTextConv: true,
+		allowUnsafeEditor: true,
+		allowUnsafeFilter: true,
+		allowUnsafeFsMonitor: true,
+		allowUnsafeGitProxy: true,
+		allowUnsafeGpgProgram: true,
+		allowUnsafeHooksPath: true,
+		allowUnsafeMergeDriver: true,
+		allowUnsafePack: true,
+		allowUnsafePager: true,
+		allowUnsafeProtocolOverride: true,
+		allowUnsafeSshCommand: true,
+		allowUnsafeTemplateDir: true,
+	},
+};
 
-const SIMPLE_GIT_OPTIONS = {
-	unsafe: Object.fromEntries(
-		SIMPLE_GIT_UNSAFE_OPTION_FLAGS.map((flag) => [flag, true]),
-	),
-} as Partial<SimpleGitOptions>;
-
+/** A simple-git instance for running git as the current user against their own repo/config/env. */
 export function createUserSimpleGit(baseDir?: string): SimpleGit {
-	return baseDir
-		? simpleGit(baseDir, SIMPLE_GIT_OPTIONS)
-		: simpleGit(SIMPLE_GIT_OPTIONS);
+	return baseDir ? simpleGit(baseDir, UNSAFE_OPTIONS) : simpleGit(UNSAFE_OPTIONS);
 }

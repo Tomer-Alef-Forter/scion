@@ -1,8 +1,7 @@
 // Installs Claude Code lifecycle hooks so agent status reports back to us.
-// Adapted from superset apps/desktop/.../agent-wrappers-claude-codex-opencode.ts
-// (getClaudeManagedHookCommand + getClaudeGlobalSettingsJsonContent +
-// createClaudeSettingsJson). Merges into ~/.claude/settings.json without
-// clobbering user hooks, and writes ~/.scion/hooks/notify.sh.
+// Merges our hook commands into ~/.claude/settings.json without clobbering
+// any hooks the user already has configured there, and writes
+// ~/.scion/hooks/notify.sh (see notify.sh for what it does at runtime).
 import {
 	chmodSync,
 	copyFileSync,
@@ -19,9 +18,9 @@ import { HOOKS_DIR, NOTIFY_SCRIPT_PATH } from "../config.ts";
 const CLAUDE_SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
 const NOTIFY_TEMPLATE = fileURLToPath(new URL("./notify.sh", import.meta.url));
 
-/** Runtime-resolved hook command (from getClaudeManagedHookCommand). */
+/** The shell command Claude actually runs for each managed hook event. */
 function managedHookCommand(): string {
-	return `[ -n "$SUPERSET_HOME_DIR" ] && [ -x "$SUPERSET_HOME_DIR/hooks/notify.sh" ] && SUPERSET_AGENT_ID=claude "$SUPERSET_HOME_DIR/hooks/notify.sh" || true`;
+	return `[ -n "$SCION_HOME_DIR" ] && [ -x "$SCION_HOME_DIR/hooks/notify.sh" ] && SCION_AGENT_ID=claude "$SCION_HOME_DIR/hooks/notify.sh" || true`;
 }
 
 function isManagedCommand(command: string | undefined): boolean {
@@ -54,56 +53,68 @@ export function installNotifyScript(): void {
 	chmodSync(NOTIFY_SCRIPT_PATH, 0o755);
 }
 
-/** Merge Superset hooks into ~/.claude/settings.json (preserving user hooks). */
-export function installClaudeSettings(): void {
-	let existing: Settings = {};
-	if (existsSync(CLAUDE_SETTINGS_PATH)) {
-		try {
-			const parsed = JSON.parse(readFileSync(CLAUDE_SETTINGS_PATH, "utf-8"));
-			if (!isObj(parsed)) {
-				console.warn(
-					"[setup] ~/.claude/settings.json is not a JSON object; skipping hook merge",
-				);
-				return;
-			}
-			existing = parsed as Settings;
-		} catch (err) {
-			console.warn("[setup] could not parse ~/.claude/settings.json; skipping:", err);
-			return;
+/** The one HookDef we install per managed event, some with a wildcard matcher. */
+function buildManagedHookDefs(command: string): Record<string, HookDef> {
+	const plain: HookDef = { hooks: [{ type: "command", command }] };
+	const wildcard: HookDef = { matcher: "*", hooks: [{ type: "command", command }] };
+	return {
+		SessionStart: plain,
+		SessionEnd: plain,
+		UserPromptSubmit: plain,
+		Stop: plain,
+		PostToolUse: wildcard,
+		PermissionRequest: wildcard,
+	};
+}
+
+/** Drop our own hook entries from a previously-installed list, keeping everything else untouched. */
+function withoutManagedHooks(defs: HookDef[]): HookDef[] {
+	const kept: HookDef[] = [];
+	for (const def of defs) {
+		if (!Array.isArray(def.hooks)) {
+			kept.push(def);
+			continue;
 		}
+		const remaining = def.hooks.filter((hook) => !isManagedCommand(hook.command));
+		if (remaining.length === 0) continue; // this def was ONLY our own hook(s)
+		kept.push(remaining.length === def.hooks.length ? def : { ...def, hooks: remaining });
 	}
+	return kept;
+}
 
-	if (!existing.hooks || typeof existing.hooks !== "object") existing.hooks = {};
-	const command = managedHookCommand();
+function readExistingSettings(): Settings | null {
+	if (!existsSync(CLAUDE_SETTINGS_PATH)) return {};
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(readFileSync(CLAUDE_SETTINGS_PATH, "utf-8"));
+	} catch (err) {
+		console.warn("[setup] could not parse ~/.claude/settings.json; skipping:", err);
+		return null;
+	}
+	if (!isObj(parsed)) {
+		console.warn(
+			"[setup] ~/.claude/settings.json is not a JSON object; skipping hook merge",
+		);
+		return null;
+	}
+	return parsed as Settings;
+}
 
-	const managedEvents: Array<{ eventName: string; def: HookDef }> = [
-		{ eventName: "SessionStart", def: { hooks: [{ type: "command", command }] } },
-		{ eventName: "SessionEnd", def: { hooks: [{ type: "command", command }] } },
-		{ eventName: "UserPromptSubmit", def: { hooks: [{ type: "command", command }] } },
-		{ eventName: "Stop", def: { hooks: [{ type: "command", command }] } },
-		{ eventName: "PostToolUse", def: { matcher: "*", hooks: [{ type: "command", command }] } },
-		{ eventName: "PermissionRequest", def: { matcher: "*", hooks: [{ type: "command", command }] } },
-	];
+/** Merge our hooks into ~/.claude/settings.json, preserving the user's own. */
+export function installClaudeSettings(): void {
+	const settings = readExistingSettings();
+	if (settings === null) return;
+	if (!isObj(settings.hooks)) settings.hooks = {};
 
-	for (const { eventName, def } of managedEvents) {
-		const current = existing.hooks[eventName];
-		if (Array.isArray(current)) {
-			// Drop any prior superset-managed entries, keep user hooks, re-add ours.
-			const filtered = current.flatMap((d) => {
-				if (!Array.isArray(d.hooks)) return [d];
-				const keep = d.hooks.filter((h) => !isManagedCommand(h.command));
-				if (keep.length === d.hooks.length) return [d];
-				return keep.length ? [{ ...d, hooks: keep }] : [];
-			});
-			filtered.push(def);
-			existing.hooks[eventName] = filtered;
-		} else {
-			existing.hooks[eventName] = [def];
-		}
+	const managedDefs = buildManagedHookDefs(managedHookCommand());
+	for (const [eventName, ourDef] of Object.entries(managedDefs)) {
+		const priorDefs = settings.hooks[eventName];
+		const survivors = Array.isArray(priorDefs) ? withoutManagedHooks(priorDefs) : [];
+		settings.hooks[eventName] = [...survivors, ourDef];
 	}
 
 	mkdirSync(dirname(CLAUDE_SETTINGS_PATH), { recursive: true });
-	writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(existing, null, 2), {
+	writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2), {
 		mode: 0o644,
 	});
 }

@@ -1,6 +1,6 @@
-// Pushes a workspace's branch and opens a GitHub PR via `gh` — the missing
-// other half of mergeBack.ts's LOCAL merge (superset does this via `gh pr
-// merge` instead). Adds just PR creation, not a full in-app PR review system.
+// Pushes a workspace's branch and opens a GitHub PR via `gh` — the
+// push-to-GitHub alternative to mergeBack.ts's fully local merge. Just PR
+// creation, not a full in-app PR review system.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createUserSimpleGit } from "./gitClient.ts";

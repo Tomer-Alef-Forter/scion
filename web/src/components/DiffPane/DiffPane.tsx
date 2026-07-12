@@ -1,6 +1,5 @@
-// Diff viewer — adapted from Superset's LightDiffViewer:
-// apps/desktop/src/renderer/screens/main/components/WorkspaceView/ChangesContent/components/LightDiffViewer/LightDiffViewer.tsx
-// See NOTICE.md.
+// Diff viewer built on @pierre/diffs, rendering a whole workspace's changes
+// as one collapsible file-diff per changed file.
 //
 // IMPORTANT: @pierre/diffs' `PatchDiff` component is single-file only — its
 // internal `getSingularPatch()` throws ("Provided patch must include only 1
@@ -11,9 +10,9 @@
 // library expects. (Parsing itself is non-throwing by default; a malformed
 // individual hunk is logged and skipped rather than aborting everything.)
 //
-// Theme uses @pierre/diffs' BUILT-IN names ("pierre-light"/"pierre-dark") —
-// Superset's custom shiki-theme registration (pulling in their whole theme
-// system) is intentionally dropped in favor of this simpler built-in option.
+// Theme uses @pierre/diffs' BUILT-IN names ("pierre-light"/"pierre-dark")
+// rather than registering a custom shiki theme — much simpler, and good
+// enough for a diff pane that isn't the app's main focus.
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";

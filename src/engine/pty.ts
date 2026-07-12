@@ -1,7 +1,7 @@
-// In-process PTY layer. Distilled from superset pty-daemon Pty.ts (the
-// node-pty spawn) + host-service terminal/env.ts (the SUPERSET_* env keys the
-// Claude hooks read). The daemon/Unix-socket/fd-handoff machinery is dropped —
-// PTYs live in this process (no cross-restart survival; that's a v1 tradeoff).
+// In-process PTY layer — wraps node-pty and exposes the env keys the
+// installed Claude hooks (see setup/notify.sh) read to report back here.
+// This module runs inside the daemon (src/daemon/*); front-ends talk to it
+// only through engine/ptyBackend.ts.
 import { chmodSync, existsSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -77,10 +77,10 @@ function buildTerminalEnv(
 	base.COLORTERM = "truecolor";
 	// claude-code parses kitty CSI-u only for certain TERM_PROGRAMs.
 	base.TERM_PROGRAM = "kitty";
-	base.SUPERSET_TERMINAL_ID = terminalId;
-	base.SUPERSET_WORKSPACE_ID = workspaceId;
-	base.SUPERSET_HOME_DIR = DATA_DIR;
-	base.SUPERSET_HOST_AGENT_HOOK_URL = getHookUrl();
+	base.SCION_TERMINAL_ID = terminalId;
+	base.SCION_WORKSPACE_ID = workspaceId;
+	base.SCION_HOME_DIR = DATA_DIR;
+	base.SCION_HOST_AGENT_HOOK_URL = getHookUrl();
 	return base;
 }
 

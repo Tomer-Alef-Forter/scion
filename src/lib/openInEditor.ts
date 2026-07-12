@@ -1,6 +1,6 @@
-// Open a worktree in an external editor. Mapping adapted from superset
-// apps/desktop/.../external/helpers.ts (getAppCommand): macOS uses
-// `open -a "<App>"`, Linux uses the CLI binary directly.
+// Open a worktree in an external editor: on macOS via `open -a "<App>"`
+// (falls back to the CLI, then the generic opener, if the app isn't
+// installed under its usual name); on Linux directly via the CLI binary.
 import { execFile } from "node:child_process";
 import { platform } from "node:os";
 import { promisify } from "node:util";

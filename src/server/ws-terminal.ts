@@ -1,7 +1,6 @@
-// PTY <-> WebSocket bridge for /ws/terminal/:terminalId.
-//
-// Protocol matches Superset's real web TerminalConnection.ts EXACTLY (field
-// names included) so its lifted client works unmodified:
+// PTY <-> WebSocket bridge for /ws/terminal/:terminalId. This end and the
+// browser client (web/src/lib/TerminalConnection.ts) both belong to us, so
+// the wire protocol is whatever's simplest to implement on both sides:
 //   server -> browser: BINARY frames = raw PTY output bytes; JSON control =
 //     {type:"attached",terminalId} | {type:"exit",exitCode,signal} | {type:"error",message}.
 //   browser -> server: JSON only = {type:"input",data} | {type:"resize",cols,rows}.

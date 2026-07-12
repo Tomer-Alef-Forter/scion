@@ -3,15 +3,22 @@
 // status mapping, and local merge-back — WITHOUT launching real claude
 // (a `bash sleep` stands in for the agent process). Run: `bun run smoke`.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
-import { WORKTREES_ROOT } from "../src/config.ts";
+import { NOTIFY_SCRIPT_PATH, WORKTREES_ROOT } from "../src/config.ts";
 import { createDb } from "../src/db/db.ts";
 import { terminalSessions, workspaces } from "../src/db/schema.ts";
 import { getHookUrl } from "../src/hookAddr.ts";
 import { buildAgentArgv, buildClaudeArgv } from "../src/engine/agents.ts";
+import {
+	deduplicateBranchName,
+	generateBranchName,
+	generateFriendlyBranchName,
+	generateSlug,
+} from "../src/engine/branchName.ts";
 import { getCachedDiffSummary, getDiffSummary, invalidateDiffCache } from "../src/engine/diff.ts";
 import { listFiles, readWorktreeFile } from "../src/engine/files.ts";
 import { mergeBack } from "../src/engine/mergeBack.ts";
@@ -20,6 +27,7 @@ import { inProcessPtyBackend } from "../src/engine/ptyBackend.ts";
 import { createStatusStore } from "../src/engine/status.ts";
 import { addWorktree, removeWorktree } from "../src/engine/worktrees.ts";
 import { startHookServer } from "../src/hookServer.ts";
+import { installClaudeHooks } from "../src/setup/installClaudeHooks.ts";
 import { createStore } from "../src/store/projects.ts";
 
 // This script does real filesystem writes/deletes under config.ts's
@@ -223,6 +231,32 @@ async function main() {
 			status.listByWorkspace("ws-smoke-1").length === 0,
 		);
 
+		// ---- notify.sh: run the real installed script as a subprocess (not the
+		// direct fetch() above) — proves the shell script itself still parses
+		// stdin JSON and posts the right shape after its rewrite. ----
+
+		const notifyScript = fileURLToPath(
+			new URL("../src/setup/notify.sh", import.meta.url),
+		);
+		execFileSync("bash", [notifyScript], {
+			input: JSON.stringify({ session_id: "s2", hook_event_name: "UserPromptSubmit" }),
+			env: {
+				...process.env,
+				SCION_HOST_AGENT_HOOK_URL: getHookUrl(),
+				SCION_TERMINAL_ID: terminalId,
+				SCION_AGENT_ID: "claude",
+			},
+		});
+		await sleep(60);
+		check(
+			"notify.sh subprocess: UserPromptSubmit → working",
+			status.listByWorkspace("ws-smoke-1")[0]?.status === "working",
+		);
+		check(
+			"notify.sh subprocess: forwards session_id as agentSessionId",
+			status.listByWorkspace("ws-smoke-1")[0]?.agentSessionId === "s2",
+		);
+
 		const merge = await mergeBack({
 			repoPath: repo,
 			branch: "feat/smoke",
@@ -278,8 +312,8 @@ async function main() {
 				JSON.stringify(["--dangerously-bypass-approvals-and-sandbox", "fix bug"]),
 		);
 
-		// ---- buildAgentArgv: newer presets (real commands from superset's
-		// builtin-terminal-agents.ts, not guessed — see agents.ts's comment) ----
+		// ---- buildAgentArgv: newer agent presets (see agents.ts's comment on
+		// how confident each one's flags are) ----
 
 		check(
 			"buildAgentArgv(cursor-agent): prompt as bare positional",
@@ -312,6 +346,103 @@ async function main() {
 		check(
 			"buildAgentArgv(copilot): no prompt omits -i",
 			JSON.stringify(buildAgentArgv("copilot", {})) === JSON.stringify(["--allow-tool=write"]),
+		);
+
+		// ---- branchName: slug shape, prefix handling, friendly names, dedup ----
+
+		const slug = generateSlug("My New Feature!!");
+		check(
+			"generateSlug: lowercased, spaces->hyphens, 4-char random suffix",
+			/^my-new-feature-[a-z0-9]{4}$/.test(slug),
+		);
+		check(
+			"generateSlug: empty/symbols-only title falls back to 'worktree-<suffix>'",
+			/^worktree-[a-z0-9]{4}$/.test(generateSlug("!!!")),
+		);
+
+		const branchName = generateBranchName("Fix the login bug", "feat");
+		check(
+			"generateBranchName: sanitized prefix + slug joined with '/'",
+			/^feat\/fix-the-login-bug-[a-z0-9]{4}$/.test(branchName),
+		);
+		check(
+			"generateBranchName: no prefix -> bare slug",
+			/^some-title-[a-z0-9]{4}$/.test(generateBranchName("Some title")),
+		);
+
+		check(
+			"generateFriendlyBranchName: two hyphen-joined words",
+			/^[a-z]+-[a-z]+$/.test(generateFriendlyBranchName()),
+		);
+
+		check(
+			"deduplicateBranchName: returns candidate unchanged when free",
+			deduplicateBranchName("feat/foo", ["feat/bar"]) === "feat/foo",
+		);
+		check(
+			"deduplicateBranchName: appends -1 on first collision",
+			deduplicateBranchName("feat/foo", ["feat/foo"]) === "feat/foo-1",
+		);
+		check(
+			"deduplicateBranchName: skips past existing numeric suffixes",
+			deduplicateBranchName("feat/foo", ["feat/foo", "feat/foo-1", "feat/foo-2"]) ===
+				"feat/foo-3",
+		);
+		check(
+			"deduplicateBranchName: collision check is case-insensitive",
+			deduplicateBranchName("Feat/Foo", ["feat/foo"]) === "Feat/Foo-1",
+		);
+
+		// ---- installClaudeHooks: merges into ~/.claude/settings.json without
+		// clobbering a hook the user already configured themselves ----
+
+		const claudeSettingsPath = join(homedir(), ".claude", "settings.json");
+		mkdirSync(dirname(claudeSettingsPath), { recursive: true });
+		writeFileSync(
+			claudeSettingsPath,
+			JSON.stringify(
+				{
+					hooks: {
+						Stop: [
+							{ hooks: [{ type: "command", command: "echo user-configured-hook" }] },
+						],
+					},
+				},
+				null,
+				2,
+			),
+		);
+
+		installClaudeHooks();
+		const afterInstall = JSON.parse(readFileSync(claudeSettingsPath, "utf-8"));
+		const stopHooksAfterInstall: Array<{ hooks?: Array<{ command: string }> }> =
+			afterInstall.hooks.Stop;
+		const allStopCommands = stopHooksAfterInstall.flatMap((d) => d.hooks?.map((h) => h.command) ?? []);
+		check(
+			"installClaudeHooks: preserves the user's own pre-existing hook",
+			allStopCommands.includes("echo user-configured-hook"),
+		);
+		check(
+			"installClaudeHooks: adds our own managed hook alongside it",
+			allStopCommands.some((c) => c.includes("hooks/notify.sh")),
+		);
+		check(
+			"installClaudeHooks: writes an executable notify.sh",
+			existsSync(NOTIFY_SCRIPT_PATH),
+		);
+
+		installClaudeHooks(); // run again — must not duplicate our own entry
+		const afterReinstall = JSON.parse(readFileSync(claudeSettingsPath, "utf-8"));
+		const stopCommandsAfterReinstall: string[] = afterReinstall.hooks.Stop.flatMap(
+			(d: { hooks?: Array<{ command: string }> }) => d.hooks?.map((h) => h.command) ?? [],
+		);
+		check(
+			"installClaudeHooks: re-running doesn't duplicate our managed hook",
+			stopCommandsAfterReinstall.filter((c) => c.includes("hooks/notify.sh")).length === 1,
+		);
+		check(
+			"installClaudeHooks: re-running still preserves the user's hook",
+			stopCommandsAfterReinstall.includes("echo user-configured-hook"),
 		);
 
 		// ---- host settings: default agent is captured onto the workspace ----

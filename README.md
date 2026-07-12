@@ -3,8 +3,7 @@
 # Scion
 
 A tiny, standalone tool for orchestrating **Claude Code** agents across
-isolated git worktrees — a stripped-down, local-only clone of
-[Superset](https://superset.sh). No Docker, Postgres, Electric, Caddy, auth, or
+isolated git worktrees. No Docker, Postgres, Electric, Caddy, auth, or
 cloud account. Everything lives under `~/.scion/`.
 
 Two front ends over the same engine:
@@ -12,10 +11,7 @@ Two front ends over the same engine:
 - A **web UI** (`bun run web:dev`) — live terminals, a status dashboard, diffs,
   and a file browser in the browser. See the [Web Guide](docs/WEB_GUIDE.md).
 
-It reuses logic copied from Superset (`packages/host-service`, `packages/shared`,
-the Claude-hook status scheme, and — for the web UI — its web terminal client,
-theme, diff viewer, and status indicator) but has **no dependency on the
-Superset monorepo**. See [NOTICE.md](NOTICE.md) for attribution.
+MIT licensed — see [LICENSE](LICENSE).
 
 ## Requirements
 
@@ -26,7 +22,7 @@ Superset monorepo**. See [NOTICE.md](NOTICE.md) for attribution.
 
 > Why Node and not Bun? `node-pty` (which spawns the agent terminals) and
 > `better-sqlite3` both rely on native bindings that don't load under Bun today,
-> so the app runs under Node — the same stack Superset's host-service uses.
+> so the app runs under Node.
 
 ## Run
 
@@ -54,7 +50,7 @@ Full usage: [User Guide](docs/USER_GUIDE.md) (terminal UI) ·
 Agent status: `working` (turn running) · `waiting` (needs input) · `review`
 (turn finished, unseen) · `idle` · `starting` · `done`.
 
-## What it doesn't do (vs real Superset)
+## What it doesn't do
 
 PTYs don't survive an app restart (no background daemon); no PR review, cloud
 sync, or multi-agent presets. **Run one front end at a time** — the terminal UI

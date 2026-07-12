@@ -1,38 +1,35 @@
-// Copied verbatim from superset
-// (~/Projects/superset/packages/shared/src/workspace-launch/{branch,slug,friendly-branch-name}.ts).
-// Pure, dependency-free except `friendly-words`.
+// Branch/slug name generation for new workspaces: turn a free-form prompt
+// (or nothing, for a prompt-less workspace) into a valid, readable git
+// branch name, and keep it collision-free against whatever branches a repo
+// already has.
 import friendlyWords from "friendly-words";
 
-export const DEFAULT_BRANCH_SEGMENT_MAX_LENGTH = 50;
-const MAX_BRANCH_LENGTH = 100;
+const SEGMENT_MAX_LENGTH = 50;
+const SLUG_MAX_LENGTH = 50;
+const SLUG_RANDOM_LENGTH = 4;
 
-interface SanitizeSegmentOptions {
-	preserveCase?: boolean;
-}
-
-export function sanitizeSegment(
-	text: string,
-	maxLength = DEFAULT_BRANCH_SEGMENT_MAX_LENGTH,
-	{ preserveCase = false }: SanitizeSegmentOptions = {},
-): string {
-	const normalized = preserveCase ? text : text.toLowerCase();
-	const allowedCharacters = preserveCase
-		? /[^a-zA-Z0-9._+@-]/g
-		: /[^a-z0-9._+@-]/g;
-
-	return normalized
+/**
+ * Reduce one "/"-separated segment of a branch name down to characters git
+ * actually allows there (see `git check-ref-format`), plus stripping a
+ * couple of sequences ("..", trailing ".lock", "@{") that are valid
+ * characters individually but have special git meaning in combination.
+ */
+function sanitizeSegment(segment: string, maxLength = SEGMENT_MAX_LENGTH): string {
+	return segment
+		.toLowerCase()
 		.trim()
 		.replace(/\s+/g, "-")
-		.replace(allowedCharacters, "")
+		.replace(/[^a-z0-9._+@-]/g, "")
 		.replace(/\.{2,}/g, ".")
 		.replace(/@\{/g, "@")
 		.replace(/-+/g, "-")
-		.replace(/^[-.]|[-.]+$/g, "")
-		.replace(/\.lock$/g, "")
+		.replace(/^[-.]+|[-.]+$/g, "")
+		.replace(/\.lock$/, "")
 		.slice(0, maxLength);
 }
 
-export function sanitizeBranchName(name: string): string {
+/** Sanitize every "/"-separated segment of a branch name independently, dropping empty ones. */
+function sanitizeBranchName(name: string): string {
 	return name
 		.split("/")
 		.map((segment) => sanitizeSegment(segment))
@@ -41,102 +38,81 @@ export function sanitizeBranchName(name: string): string {
 }
 
 /**
- * Strips only what git forbids from a user-typed branch name.
- * Preserves case, slashes, underscores — respects user intent.
- */
-export function sanitizeUserBranchName(
-	name: string,
-	maxLength = MAX_BRANCH_LENGTH,
-): string {
-	return name
-		.trim()
-		.replace(/\.\./g, ".")
-		.replace(/[~^:?*[\]\\]/g, "")
-		// biome-ignore lint: stripping control chars intentionally
-		.replace(/[\x00-\x1f\x7f]/g, "")
-		.replace(/@\{/g, "@")
-		.replace(/\.lock$/g, "")
-		.replace(/^-/, "")
-		.replace(/\/+/g, "/")
-		.replace(/^\/|\/$/g, "")
-		.slice(0, maxLength)
-		.replace(/[-./]+$/g, "");
-}
-
-/**
- * Returns a branch name that does not collide with existing names, appending
- * numeric suffixes (-1, -2, …) to the last path segment until free.
+ * If `candidate` isn't already in `existingBranchNames` (case-insensitive),
+ * return it unchanged. Otherwise append "-1", "-2", ... to its last path
+ * segment until one isn't taken.
  */
 export function deduplicateBranchName(
 	candidate: string,
 	existingBranchNames: string[],
 ): string {
-	const normalizedCandidate = candidate.trim();
-	if (!normalizedCandidate) return normalizedCandidate;
+	const trimmed = candidate.trim();
+	if (!trimmed) return trimmed;
 
-	const existingSet = new Set(existingBranchNames.map((b) => b.toLowerCase()));
-	if (!existingSet.has(normalizedCandidate.toLowerCase()))
-		return normalizedCandidate;
+	const taken = new Set(existingBranchNames.map((name) => name.toLowerCase()));
+	if (!taken.has(trimmed.toLowerCase())) return trimmed;
 
-	const segments = normalizedCandidate.split("/");
-	const lastSegment = segments.at(-1) ?? normalizedCandidate;
+	const segments = trimmed.split("/");
 	const prefix = segments.slice(0, -1).join("/");
-	const strippedBase = lastSegment.replace(/-\d+$/, "");
-	const baseSegment = strippedBase || lastSegment;
-	const append = (suffix: number) =>
-		prefix ? `${prefix}/${baseSegment}-${suffix}` : `${baseSegment}-${suffix}`;
+	const base = (segments.at(-1) ?? trimmed).replace(/-\d+$/, "");
+	const withSuffix = (n: number) => (prefix ? `${prefix}/${base}-${n}` : `${base}-${n}`);
 
-	for (let suffix = 1; suffix < 10_000; suffix++) {
-		const deduplicated = append(suffix);
-		if (!existingSet.has(deduplicated.toLowerCase())) return deduplicated;
+	for (let n = 1; n < 10_000; n++) {
+		const attempt = withSuffix(n);
+		if (!taken.has(attempt.toLowerCase())) return attempt;
 	}
-	return prefix
-		? `${prefix}/${baseSegment}-${Date.now()}`
-		: `${baseSegment}-${Date.now()}`;
+	// Practically unreachable (10k collisions on one base name), but never
+	// return something that collides.
+	return withSuffix(Date.now());
+}
+
+function randomSlugSuffix(length: number): string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+	let out = "";
+	for (let i = 0; i < length; i++) {
+		out += alphabet[Math.floor(Math.random() * alphabet.length)];
+	}
+	return out;
 }
 
 /** "My New Feature" -> "my-new-feature-a8f3" */
-export function generateSlug(title: string, maxLength = 50, randomLength = 4): string {
-	let slug = title
-		.toLowerCase()
-		.trim()
-		.replace(/[\s_]+/g, "-")
-		.replace(/[^a-z0-9-]/g, "")
-		.replace(/-+/g, "-")
-		.replace(/^-+|-+$/g, "");
-	if (!slug) slug = "worktree";
+export function generateSlug(
+	title: string,
+	maxLength = SLUG_MAX_LENGTH,
+	randomLength = SLUG_RANDOM_LENGTH,
+): string {
+	const base =
+		title
+			.toLowerCase()
+			.trim()
+			.replace(/[\s_]+/g, "-")
+			.replace(/[^a-z0-9-]/g, "")
+			.replace(/-+/g, "-")
+			.replace(/^-+|-+$/g, "") || "worktree";
 
-	const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-	let randomSuffix = "";
-	for (let i = 0; i < randomLength; i++) {
-		randomSuffix += chars.charAt(Math.floor(Math.random() * chars.length));
+	const budget = maxLength - randomLength - 1; // 1 for the separating hyphen
+	let trimmedBase = base;
+	if (trimmedBase.length > budget) {
+		const cut = trimmedBase.slice(0, budget);
+		// Prefer breaking on a whole word if the cut only loses a small tail.
+		const lastHyphen = cut.lastIndexOf("-");
+		trimmedBase = (lastHyphen > budget * 0.7 ? cut.slice(0, lastHyphen) : cut).replace(
+			/-+$/,
+			"",
+		);
 	}
 
-	const availableLength = maxLength - randomLength - 1;
-	if (slug.length > availableLength) {
-		const truncated = slug.substring(0, availableLength);
-		const lastHyphen = truncated.lastIndexOf("-");
-		slug =
-			lastHyphen > availableLength * 0.7
-				? truncated.substring(0, lastHyphen)
-				: truncated;
-		slug = slug.replace(/-+$/, "");
-	}
-	return `${slug}-${randomSuffix}`;
+	return `${trimmedBase}-${randomSlugSuffix(randomLength)}`;
 }
 
 /** "My New Feature" + prefix "feat" -> "feat/my-new-feature-a8f3" */
 export function generateBranchName(title: string, prefix?: string): string {
 	const slug = generateSlug(title);
-	if (prefix) {
-		const cleanPrefix = sanitizeBranchName(prefix);
-		if (!cleanPrefix) return slug;
-		return `${cleanPrefix}/${slug}`;
-	}
-	return slug;
+	const cleanPrefix = prefix ? sanitizeBranchName(prefix) : "";
+	return cleanPrefix ? `${cleanPrefix}/${slug}` : slug;
 }
 
-/** Two friendly words, e.g. "cheerful-umbrella". */
+/** Two random friendly words for a prompt-less workspace, e.g. "cheerful-umbrella". */
 export function generateFriendlyBranchName(): string {
 	const predicates = friendlyWords.predicates as string[];
 	const objects = friendlyWords.objects as string[];

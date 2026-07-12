@@ -1,29 +1,41 @@
-// Layout cribbed from Superset's mock SessionCard:
-// apps/web/src/app/(agents)/components/SessionList/components/SessionCard/SessionCard.tsx
-// See NOTICE.md. Status icon swapped for the lifted StatusIndicator (live
-// agent status instead of a static completed/running/failed enum); data
-// source is our real WorkspaceWithStatus instead of MockSession.
+// One row in the workspace list: status dot + name on top, branch + change
+// counts underneath, age badge on the right. Memoized below since the parent
+// grid re-renders on every status/diff refresh.
 import { memo } from "react";
 import { StatusIndicator } from "../StatusIndicator/StatusIndicator";
-import type { WorkspaceWithStatus } from "../../lib/api";
+import type { DiffSummary, WorkspaceWithStatus } from "../../lib/api";
 import { cn } from "../../lib/utils";
 
-const MS_PER_MINUTE = 60_000;
-const MS_PER_HOUR = 60 * MS_PER_MINUTE;
-const MS_PER_DAY = 24 * MS_PER_HOUR;
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const MONTH_MS = 30 * DAY_MS;
 
 function formatTimeAgo(createdAt: number): string {
-	const diff = Date.now() - createdAt;
-	const minutes = Math.floor(diff / MS_PER_MINUTE);
-	const hours = Math.floor(diff / MS_PER_HOUR);
-	const days = Math.floor(diff / MS_PER_DAY);
-	const months = Math.floor(days / 30);
+	const elapsed = Date.now() - createdAt;
+	if (elapsed < MINUTE_MS) return "now";
+	if (elapsed < HOUR_MS) return `${Math.floor(elapsed / MINUTE_MS)}m`;
+	if (elapsed < DAY_MS) return `${Math.floor(elapsed / HOUR_MS)}h`;
+	if (elapsed < MONTH_MS) return `${Math.floor(elapsed / DAY_MS)}d`;
+	return `${Math.floor(elapsed / MONTH_MS)}mo`;
+}
 
-	if (minutes < 1) return "now";
-	if (minutes < 60) return `${minutes}m`;
-	if (hours < 24) return `${hours}h`;
-	if (days < 30) return `${days}d`;
-	return `${months}mo`;
+/** " · +12 -3 · 2 uncommitted" — nothing at all if the worktree is clean. */
+function DiffStats({ diff }: { diff: DiffSummary | null }) {
+	if (!diff || (diff.filesChanged === 0 && diff.uncommitted === 0)) return null;
+	return (
+		<>
+			{" · "}
+			{diff.insertions > 0 && (
+				<span className="text-green-600 dark:text-green-500">+{diff.insertions}</span>
+			)}
+			{diff.insertions > 0 && diff.deletions > 0 && " "}
+			{diff.deletions > 0 && (
+				<span className="text-red-600 dark:text-red-500">-{diff.deletions}</span>
+			)}
+			{diff.uncommitted > 0 && ` · ${diff.uncommitted} uncommitted`}
+		</>
+	);
 }
 
 interface WorkspaceCardProps {
@@ -39,7 +51,6 @@ function WorkspaceCardImpl({
 	onClick,
 	onContextMenu,
 }: WorkspaceCardProps) {
-	const diff = workspace.diff;
 	return (
 		<button
 			type="button"
@@ -50,28 +61,14 @@ function WorkspaceCardImpl({
 				selected ? "bg-accent" : "hover:bg-muted/50",
 			)}
 		>
-			<StatusIndicator status={workspace.status} />
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5">
-				<span className="truncate text-sm font-medium">{workspace.name}</span>
-				<span className="truncate text-xs text-muted-foreground">
+				<div className="flex min-w-0 items-center gap-2">
+					<StatusIndicator status={workspace.status} />
+					<span className="truncate text-sm font-medium">{workspace.name}</span>
+				</div>
+				<span className="truncate pl-4 text-xs text-muted-foreground">
 					{workspace.branch}
-					{diff && (diff.filesChanged > 0 || diff.uncommitted > 0) && (
-						<>
-							{" · "}
-							{diff.insertions > 0 && (
-								<span className="text-green-600 dark:text-green-500">
-									+{diff.insertions}
-								</span>
-							)}
-							{diff.insertions > 0 && diff.deletions > 0 && " "}
-							{diff.deletions > 0 && (
-								<span className="text-red-600 dark:text-red-500">
-									-{diff.deletions}
-								</span>
-							)}
-							{diff.uncommitted > 0 && ` · ${diff.uncommitted} uncommitted`}
-						</>
-					)}
+					<DiffStats diff={workspace.diff} />
 					{!workspace.terminalId && " · click to resume"}
 				</span>
 			</div>

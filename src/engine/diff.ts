@@ -1,7 +1,7 @@
-// Diff/status helpers, adapted from superset host-service git/git.ts +
-// git/utils/git-helpers.ts (resolveBaseComparison / merge-base). Rendering is
-// done by shelling `git diff --color` (superset renders via @pierre/diffs in a
-// GUI; a TUI just wants the colored patch).
+// Diff/status helpers for a workspace's worktree: resolving its base branch,
+// summarizing what's changed, and rendering the actual diff. Rendering is
+// done by shelling out to `git diff --color` directly — a TUI just wants the
+// colored patch text, no GUI diff widget needed.
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createUserSimpleGit } from "./gitClient.ts";

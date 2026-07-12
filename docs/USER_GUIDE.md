@@ -5,9 +5,8 @@ on its own git branch inside an isolated worktree. Think of it as a little
 control tower: launch an agent with a task, let it work, then review, diff, and
 merge — all without ever touching your main checkout.
 
-It's a stripped-down, local-only clone of [Superset](https://superset.sh): no
-Docker, Postgres, cloud account, or auth. Everything lives under
-`~/.scion/`.
+It's a stripped-down, local-only tool: no Docker, Postgres, cloud account, or
+auth. Everything lives under `~/.scion/`.
 
 There's also a browser-based [Web Guide](./WEB_GUIDE.md) — same engine,
 same underlying state, a second front end with live terminals, a diff viewer,
@@ -46,7 +45,7 @@ and a file browser.
 ## 3. Install & run
 
 ```bash
-cd ~/Projects/superset-local
+cd ~/Projects/scion
 bun install           # or: npm install
 bun run db:generate   # once — produces the SQLite migrations
 bun start             # runs `tsx src/index.tsx` under Node
@@ -179,8 +178,8 @@ repo checkout**:
 - On conflict it **aborts the merge and restores your previous branch**, leaving
   the main repo clean. You then resolve manually.
 
-> Note: this merges **locally**. It does not open or merge a PR (real Superset
-> merges via `gh pr merge`; that's out of scope here).
+> Note: this merges **locally**, directly into your base branch — it does not
+> push or open a GitHub PR.
 
 ---
 
@@ -196,7 +195,7 @@ repo checkout**:
 
 ---
 
-## 10. Limitations (vs real Superset)
+## 10. Limitations
 
 - **A crash of the PTY daemon itself still ends running agent terminals** —
   restarting the terminal UI or the web server does not (a background daemon,

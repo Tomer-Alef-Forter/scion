@@ -427,9 +427,9 @@ async function main() {
 	}
 
 	const ws1 = new WebSocket(`ws://127.0.0.1:${port}/ws/terminal/${terminalId}`);
-	// Default binaryType is "blob" per spec — Superset's real TerminalConnection
-	// sets "arraybuffer" explicitly; mirror that here so binary frames arrive
-	// as ArrayBuffer instead of Blob.
+	// Default binaryType is "blob" per spec; our real client (TerminalConnection.ts)
+	// sets "arraybuffer" explicitly, so mirror that here too — otherwise binary
+	// frames arrive as Blob instead of the ArrayBuffer this test expects.
 	ws1.binaryType = "arraybuffer";
 	const attachedPromise = new Promise<Record<string, unknown> | null>((resolve) => {
 		ws1.addEventListener("message", function onFirst(evt: MessageEvent) {

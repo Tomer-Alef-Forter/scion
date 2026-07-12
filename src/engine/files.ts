@@ -1,6 +1,6 @@
-// Read-only file browser for a worktree. Additive engine module — nothing
-// existing changes. Path-traversal guard adapted from Superset's
-// `assertSafeRelativePath` (host-service git.ts).
+// Read-only file browser for a worktree: list files, then read one at a
+// time, with a path-traversal guard so a crafted relative path can't escape
+// the worktree directory.
 import { stat as fsStat, readFile } from "node:fs/promises";
 import { isAbsolute, join, normalize, sep } from "node:path";
 import { createUserSimpleGit } from "./gitClient.ts";

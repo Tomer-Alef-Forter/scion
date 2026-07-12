@@ -1,29 +1,24 @@
-// Assembles + launches the coding-agent CLI in a worktree PTY. Claude Code
-// support adapted from superset builtin-terminal-agents.ts (the "claude"
-// definition) and agents.ts (buildAgentCommandString). Because we spawn the
-// binary directly (no intermediate shell), there's no shell quoting — the
-// prompt is passed as a plain argv positional (superset's "argv" transport).
+// Assembles + launches the coding-agent CLI in a worktree PTY. We spawn each
+// binary directly (no intermediate shell), so there's no shell quoting to
+// worry about — the prompt is passed straight through as a plain argv
+// positional.
 import { randomUUID } from "node:crypto";
+import stripAnsi from "strip-ansi";
 import type { AgentType } from "../db/schema.ts";
 import type { PtyBackend } from "./ptyBackend.ts";
 
 /**
- * Sanitize a prompt destined for the agent. Copied from superset
- * agent-prompt-launch.ts (sanitizePromptForPty): strip ANSI/control chars,
- * normalize newlines, expand tabs.
+ * A prompt typed into our UI shouldn't be able to inject terminal escape
+ * sequences into the PTY it gets forwarded to, and CRLF/tabs from a pasted
+ * multi-line prompt should render predictably once inside it. `strip-ansi`
+ * covers CSI/OSC escapes; the rest is normalized here.
  */
 export function sanitizePrompt(prompt: string): string {
-	return (
-		prompt
-			.replace(/\r\n?/g, "\n")
-			// biome-ignore lint: stripping ANSI/control sequences intentionally
-			.replace(/(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]/g, "")
-			// biome-ignore lint: stripping OSC sequences intentionally
-			.replace(/(?:\x1b\]|\x9d)[^\x07\x1b\x9c\n]*(?:\x07|\x1b\\|\x9c)/g, "")
-			// biome-ignore lint: stripping remaining control chars intentionally
-			.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "")
-			.replaceAll("\t", "    ")
-	);
+	return stripAnsi(prompt)
+		.replace(/\r\n?/g, "\n")
+		// biome-ignore lint: stripping remaining non-printable control chars intentionally
+		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "")
+		.replaceAll("\t", "    ");
 }
 
 interface AgentArgvArgs {
@@ -42,8 +37,6 @@ interface AgentConfig {
 // unattended agent can actually make progress instead of blocking on stdin
 // nobody's watching.
 const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
-	// From superset packages/shared/src/builtin-terminal-agents.ts:
-	//   { id: "claude", command: "claude --dangerously-skip-permissions" }
 	claude: {
 		file: "claude",
 		buildArgv({ prompt, resumeSessionId }) {
@@ -79,14 +72,11 @@ const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
 			return cleanPrompt ? [...base, cleanPrompt] : base;
 		},
 	},
-	// Cursor Agent, Droid, OpenCode, Copilot: commands/flags pulled from
-	// superset packages/shared/src/builtin-terminal-agents.ts (a real,
-	// shipped product's tested definitions) rather than guessed — but unlike
-	// Claude/Gemini/Codex above, none of these have a confirmed flag for
-	// skipping interactive approval verified against a live install here
-	// (Copilot's --allow-tool=write is the closest signal). Same honesty
-	// level as gemini/codex: best-effort, check `--help` if a launch hangs
-	// waiting on a prompt nobody's watching.
+	// Cursor Agent, Droid, OpenCode, Copilot: like gemini/codex above, these
+	// flags are best-effort from each CLI's own docs, not verified against a
+	// live install here (Copilot's --allow-tool=write is the closest signal
+	// of an approval-skipping flag; the others have no confirmed equivalent).
+	// Check `--help` if a launch hangs waiting on a prompt nobody's watching.
 	"cursor-agent": {
 		file: "cursor-agent",
 		buildArgv({ prompt }) {

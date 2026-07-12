@@ -72,7 +72,7 @@ Three screens plus two full-screen modes. Everything is keyboard-driven.
 ┌─ Scion · projects ─────────────────────────────────────────────────┐
 │                                                                    │
 │  ❯ analytics        /Users/tomeralef/dev/analytics                 │
-│    superset-local   /Users/tomeralef/Projects/superset-local       │
+│    scion            /Users/tomeralef/Projects/scion                │
 │                                                                    │
 │  ↑/↓ select · enter open · a add · x remove · q quit               │
 └────────────────────────────────────────────────────────────────────┘

@@ -1,7 +1,6 @@
-// Localhost receiver for Claude lifecycle hooks. notify.sh POSTs here.
-// Payload shape matches superset's notify-hook.template.sh (a tRPC-style
-// `{ json: {...} }` envelope): { json: { terminalId, eventType, agent } }.
-// Adapted from host-service notifications.ts (the `hook` handler).
+// Localhost receiver for Claude lifecycle hooks. notify.sh POSTs here with a
+// `{ json: { terminalId, eventType, agent } }` envelope (the outer `json`
+// wrapper is just kept as a stable, versionable shape for the payload).
 //
 // Binds the preferred port, but falls back to an ephemeral port if it's taken
 // (e.g. a second instance) instead of crashing on EADDRINUSE. The resolved URL
