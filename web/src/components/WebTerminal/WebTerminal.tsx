@@ -86,21 +86,27 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 			fontFamily: TERMINAL_FONT_FAMILY,
 			fontSize: 14,
 			scrollback: 5000,
-			// Scroll tuning. scrollSensitivity is a direct, uncapped multiplier
-			// on scroll-pixels-per-trackpad-pixel (trackpad gestures bypass
-			// animation entirely, so this is the only speed knob for that
-			// path) — pushed very high (8x the prior 24/60 tuning) per request.
-			// NOTE: past a point this trades control for speed — a tiny
-			// gesture can blow through most of the scrollback. If it overshoots
-			// or feels twitchy, say so and we'll dial back rather than revert
-			// to nothing. smoothScrollDuration only affects real physical
-			// mouse-wheel input (trackpad is already instant), left at the
-			// sane-range ceiling.
-			smoothScrollDuration: 150,
-			scrollSensitivity: 192,
-			fastScrollSensitivity: 480,
+			// Scroll tuning, aimed at a natural, native-terminal feel rather than
+			// raw speed. scrollSensitivity is a multiplier on scroll delta;
+			// trackpad gestures bypass the wheel animation, so this is what makes
+			// a gesture track 1:1 with your fingers instead of leaping — kept at
+			// the default 1 (a high value here is exactly what makes scrolling
+			// feel jumpy/twitchy). fastScrollSensitivity is the alt-key boost.
+			// smoothScrollDuration animates physical mouse-wheel ticks; 0 = the
+			// most responsive (no per-tick animation lag). Note: xterm scrolls in
+			// whole rows and has no sub-pixel/momentum rendering, so it can get
+			// close to native but not identical.
+			smoothScrollDuration: 0,
+			scrollSensitivity: 1,
+			fastScrollSensitivity: 5,
 			theme: TERMINAL_THEME,
 			allowProposedApi: true,
+			// Hide xterm's built-in scrollbar. The fit addon permanently reserves
+			// scrollbar width out of the usable columns, so hiding it lets content
+			// use the full pane width (matches Superset's terminal config).
+			scrollbar: {
+				showScrollbar: false,
+			},
 		});
 		terminalRef.current = terminal;
 		const fitAddon = new FitAddon();
@@ -145,18 +151,26 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 		// give us a WebGL context (or loses it later — GPU reset, tab
 		// backgrounding on some drivers), we dispose the addon and xterm falls
 		// back to its default DOM renderer automatically.
+		// Deferred to the next frame so it doesn't race xterm's post-open
+		// viewport sync (the pattern Superset uses); loading it synchronously
+		// here can fight the initial layout/fit. The disposed guard + cancel in
+		// cleanup keep a fast unmount from loading WebGL into a dead terminal.
 		let webglAddon: WebglAddon | null = null;
-		try {
-			webglAddon = new WebglAddon();
-			webglAddon.onContextLoss(() => {
-				webglAddon?.dispose();
+		let webglDisposed = false;
+		const webglRafId = requestAnimationFrame(() => {
+			if (webglDisposed) return;
+			try {
+				webglAddon = new WebglAddon();
+				webglAddon.onContextLoss(() => {
+					webglAddon?.dispose();
+					webglAddon = null;
+				});
+				terminal.loadAddon(webglAddon);
+			} catch {
+				// WebGL unavailable (headless, blocklisted GPU, etc.) — DOM renderer.
 				webglAddon = null;
-			});
-			terminal.loadAddon(webglAddon);
-		} catch {
-			// WebGL unavailable (headless, blocklisted GPU, etc.) — DOM renderer.
-			webglAddon = null;
-		}
+			}
+		});
 
 		try {
 			fitAddon.fit();
@@ -229,6 +243,8 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 			connection.dispose();
 			connectionRef.current = null;
 			terminalRef.current = null;
+			webglDisposed = true;
+			cancelAnimationFrame(webglRafId);
 			webglAddon?.dispose();
 			terminal.dispose();
 		};
