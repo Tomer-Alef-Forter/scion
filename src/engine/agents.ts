@@ -31,18 +31,18 @@ interface AgentConfig {
 	buildArgv(args: AgentArgvArgs): string[];
 }
 
-// Every agent skips its own interactive approval prompts, the same way
-// Claude Code's --dangerously-skip-permissions does — the worktree is the
-// safety boundary here (see docs), not per-action confirmation, so an
-// unattended agent can actually make progress instead of blocking on stdin
-// nobody's watching.
+// Every agent launches in an auto-approving mode — the worktree is the safety
+// boundary here (see docs), not per-action confirmation, so an unattended
+// agent can actually make progress instead of blocking on stdin nobody's
+// watching. For Claude Code that's `--permission-mode auto` (the same mode its
+// own editor integrations use); the other CLIs have their own equivalents.
 const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
 	claude: {
 		file: "claude",
 		buildArgv({ prompt, resumeSessionId }) {
 			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
 			const resumeArgs = resumeSessionId ? ["--resume", resumeSessionId] : [];
-			const base = ["--dangerously-skip-permissions", ...resumeArgs];
+			const base = ["--permission-mode", "auto", ...resumeArgs];
 			return cleanPrompt ? [...base, cleanPrompt] : base;
 		},
 	},

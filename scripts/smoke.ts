@@ -270,17 +270,17 @@ async function main() {
 		check(
 			"buildClaudeArgv: no prompt/no resume",
 			JSON.stringify(buildClaudeArgv({})) ===
-				JSON.stringify(["--dangerously-skip-permissions"]),
+				JSON.stringify(["--permission-mode", "auto"]),
 		);
 		check(
 			"buildClaudeArgv: prompt only",
 			JSON.stringify(buildClaudeArgv({ prompt: "fix bug" })) ===
-				JSON.stringify(["--dangerously-skip-permissions", "fix bug"]),
+				JSON.stringify(["--permission-mode", "auto", "fix bug"]),
 		);
 		check(
 			"buildClaudeArgv: resume only",
 			JSON.stringify(buildClaudeArgv({ resumeSessionId: "sess-123" })) ===
-				JSON.stringify(["--dangerously-skip-permissions", "--resume", "sess-123"]),
+				JSON.stringify(["--permission-mode", "auto", "--resume", "sess-123"]),
 		);
 		check(
 			"buildClaudeArgv: resume + prompt (resume flag precedes prompt)",
@@ -288,7 +288,8 @@ async function main() {
 				buildClaudeArgv({ prompt: "fix bug", resumeSessionId: "sess-123" }),
 			) ===
 				JSON.stringify([
-					"--dangerously-skip-permissions",
+					"--permission-mode",
+					"auto",
 					"--resume",
 					"sess-123",
 					"fix bug",
