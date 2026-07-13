@@ -81,6 +81,14 @@ function buildTerminalEnv(
 	base.SCION_WORKSPACE_ID = workspaceId;
 	base.SCION_HOME_DIR = DATA_DIR;
 	base.SCION_HOST_AGENT_HOOK_URL = getHookUrl();
+	// Run Claude Code in its classic (main-screen) renderer instead of the
+	// default fullscreen TUI, which uses the alternate screen + mouse capture
+	// and turns the wheel into arrow keys. Classic mode streams the transcript
+	// into the terminal's normal buffer, so xterm's native scrollback drives
+	// the mouse wheel — smooth scrolling like a plain shell — and it's lighter
+	// to render in the browser terminal. Only Claude reads this var; other
+	// agents ignore it.
+	base.CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN = "1";
 	return base;
 }
 
