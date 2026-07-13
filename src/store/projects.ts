@@ -36,6 +36,7 @@ import {
 	removeWorktree,
 	resolveDefaultBranch,
 } from "../engine/worktrees.ts";
+import { trustWorktree } from "../setup/trustWorktree.ts";
 import { type HostSettings, getHostSettings, updateHostSettings } from "./hostSettings.ts";
 
 export interface Store {
@@ -190,6 +191,10 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 				repoPath: project.repoPath,
 				branch,
 			});
+			// Before the agent ever launches — otherwise Claude Code's own
+			// workspace-trust dialog (separate from --dangerously-skip-permissions)
+			// would block on stdin the first time this brand-new directory opens.
+			trustWorktree(worktreePath);
 
 			// Captured now, not re-read later — a workspace keeps using the agent
 			// it was created with even if the default setting changes afterward.
@@ -208,22 +213,23 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 			};
 			db.insert(workspaces).values(workspace).run();
 
-			// Standalone step, before the agent ever launches — see
+			// Runs concurrently with the agent launch below, not before it — see
 			// engine/setupCommand.ts for why this never touches the agent's own
-			// launch command. Non-blocking: proceeds to launch regardless.
-			let setupWarning: string | undefined;
-			if (project.setupCommand) {
-				const result = await runSetupCommand(worktreePath, project.setupCommand);
-				if (!result.ok) setupWarning = result.message;
-			}
-
-			const { terminalId } = await launchAgent({
-				backend,
-				agentType: defaultAgent,
-				workspaceId: workspace.id,
-				worktreePath,
-				prompt,
-			});
+			// launch command. Non-blocking: a failure only surfaces as a warning,
+			// it never stops (or waits on) the agent starting up.
+			const [setupResult, { terminalId }] = await Promise.all([
+				project.setupCommand
+					? runSetupCommand(worktreePath, project.setupCommand)
+					: Promise.resolve(null),
+				launchAgent({
+					backend,
+					agentType: defaultAgent,
+					workspaceId: workspace.id,
+					worktreePath,
+					prompt,
+				}),
+			]);
+			const setupWarning = setupResult && !setupResult.ok ? setupResult.message : undefined;
 			db.insert(terminalSessions)
 				.values({
 					id: terminalId,
@@ -332,6 +338,10 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 			}
 			db.delete(workspaces).where(eq(workspaces.id, workspaceId)).run();
 			invalidateDiffCache(row.worktreePath);
+
+			if (getHostSettings(db).lastOpenedWorkspaceId === workspaceId) {
+				updateHostSettings(db, { lastOpenedWorkspaceId: null });
+			}
 		},
 
 		getSettings() {

@@ -32,6 +32,7 @@ export type EditorType = "vscode" | "cursor" | "zed";
 export interface HostSettings {
 	defaultAgent: AgentType;
 	defaultEditor: EditorType;
+	lastOpenedWorkspaceId: string | null;
 }
 
 export interface WorkspaceWithStatus {

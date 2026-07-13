@@ -452,11 +452,28 @@ async function main() {
 			"getSettings defaults to claude/vscode",
 			defaultSettings.defaultAgent === "claude" && defaultSettings.defaultEditor === "vscode",
 		);
+		check(
+			"getSettings defaults lastOpenedWorkspaceId to null",
+			defaultSettings.lastOpenedWorkspaceId === null,
+		);
 		const updated = store.updateSettings({ defaultAgent: "gemini" });
 		check("updateSettings persists defaultAgent", updated.defaultAgent === "gemini");
 		check(
 			"updateSettings leaves defaultEditor untouched by a partial patch",
 			updated.defaultEditor === "vscode",
+		);
+
+		// ---- trustWorktree: new worktrees are pre-approved in ~/.claude.json,
+		// without clobbering any other project entries already there ----
+
+		const claudeConfigPath = join(homedir(), ".claude.json");
+		writeFileSync(
+			claudeConfigPath,
+			JSON.stringify(
+				{ projects: { "/some/other/repo": { hasTrustDialogAccepted: true, foo: "bar" } } },
+				null,
+				2,
+			),
 		);
 
 		const geminiWorkspace = await store.createWorkspace({
@@ -466,6 +483,16 @@ async function main() {
 		check(
 			"createWorkspace captures the current default agent onto the workspace",
 			geminiWorkspace.workspace.agentType === "gemini",
+		);
+		const claudeConfigAfterCreate = JSON.parse(readFileSync(claudeConfigPath, "utf-8"));
+		check(
+			"trustWorktree: marks the new worktree trusted in ~/.claude.json",
+			claudeConfigAfterCreate.projects[geminiWorkspace.workspace.worktreePath]
+				?.hasTrustDialogAccepted === true,
+		);
+		check(
+			"trustWorktree: leaves other projects' entries untouched",
+			claudeConfigAfterCreate.projects["/some/other/repo"]?.foo === "bar",
 		);
 		getSession(geminiWorkspace.terminalId)?.kill();
 		await store.deleteWorkspace({
@@ -545,8 +572,27 @@ async function main() {
 			!existsSync(dirtyWs.workspace.worktreePath),
 		);
 
-		// ---- per-project setup command: runs standalone before the agent
-		// launches, non-blocking on failure (see engine/setupCommand.ts) ----
+		// ---- lastOpenedWorkspaceId: round-trips, and gets cleared once the
+		// workspace it names is deleted (rather than pointing at nothing) ----
+
+		const reopenWs = await store.createWorkspace({
+			projectId: project.id,
+			prompt: "smoke test reopen workspace",
+		});
+		getSession(reopenWs.terminalId)?.kill();
+		store.updateSettings({ lastOpenedWorkspaceId: reopenWs.workspace.id });
+		check(
+			"updateSettings persists lastOpenedWorkspaceId",
+			store.getSettings().lastOpenedWorkspaceId === reopenWs.workspace.id,
+		);
+		await store.deleteWorkspace({ workspaceId: reopenWs.workspace.id, deleteBranch: true, force: true });
+		check(
+			"deleteWorkspace clears lastOpenedWorkspaceId when it named the deleted workspace",
+			store.getSettings().lastOpenedWorkspaceId === null,
+		);
+
+		// ---- per-project setup command: runs standalone alongside the agent
+		// launch, non-blocking on failure (see engine/setupCommand.ts) ----
 
 		store.updateProject(project.id, { setupCommand: "touch setup-ran.txt" });
 		const setupOkWs = await store.createWorkspace({
@@ -555,7 +601,7 @@ async function main() {
 		});
 		getSession(setupOkWs.terminalId)?.kill();
 		check(
-			"setupCommand runs in the new worktree before the agent launches",
+			"setupCommand runs in the new worktree alongside the agent launch",
 			existsSync(join(setupOkWs.workspace.worktreePath, "setup-ran.txt")) &&
 				setupOkWs.setupWarning === undefined,
 		);

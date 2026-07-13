@@ -113,6 +113,10 @@ export const hostSettings = sqliteTable("host_settings", {
 	worktreeBaseDir: text("worktree_base_dir"),
 	defaultAgent: text("default_agent").$type<AgentType>().notNull().default("claude"),
 	defaultEditor: text("default_editor").$type<EditorType>().notNull().default("vscode"),
+	// The workspace to reopen on the next launch of either front end — see
+	// store/hostSettings.ts. Cleared (not just left dangling) once the
+	// workspace it names no longer exists.
+	lastOpenedWorkspaceId: text("last_opened_workspace_id"),
 });
 
 export type Project = typeof projects.$inferSelect;

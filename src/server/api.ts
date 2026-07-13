@@ -97,9 +97,16 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 
 	api.put("/settings", async (c) => {
 		const body = await c.req.json().catch(() => ({}));
-		const patch: { defaultAgent?: AgentType; defaultEditor?: EditorType } = {};
+		const patch: {
+			defaultAgent?: AgentType;
+			defaultEditor?: EditorType;
+			lastOpenedWorkspaceId?: string | null;
+		} = {};
 		if (AGENT_TYPES.includes(body.defaultAgent)) patch.defaultAgent = body.defaultAgent;
 		if (EDITOR_TYPES.includes(body.defaultEditor)) patch.defaultEditor = body.defaultEditor;
+		if (typeof body.lastOpenedWorkspaceId === "string" || body.lastOpenedWorkspaceId === null) {
+			patch.lastOpenedWorkspaceId = body.lastOpenedWorkspaceId;
+		}
 		return c.json(store.updateSettings(patch));
 	});
 

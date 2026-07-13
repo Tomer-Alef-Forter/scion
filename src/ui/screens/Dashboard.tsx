@@ -124,6 +124,7 @@ export function Dashboard({
 		if (!selected || !project) return;
 
 		if (key.return) {
+			store.updateSettings({ lastOpenedWorkspaceId: selected.id });
 			const terminalId = liveTerminal(selected.id);
 			if (terminalId) {
 				status.markSeen(selected.id);

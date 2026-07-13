@@ -93,7 +93,20 @@ export function App() {
 
 	useEffect(() => {
 		api.listProjects().then(setProjects).catch((e) => setError(String(e)));
-		api.getSettings().then(setSettings).catch((e) => setError(String(e)));
+		api.getSettings().then((s) => {
+			setSettings(s);
+			// Reopen whatever was open last time — if it's gone (deleted since),
+			// getWorkspace 404s and we just leave nothing selected.
+			if (s.lastOpenedWorkspaceId) {
+				api
+					.getWorkspace(s.lastOpenedWorkspaceId)
+					.then((ws) => {
+						setSelectedProjectId(ws.projectId);
+						handleSelectWorkspace(ws);
+					})
+					.catch(() => {});
+			}
+		}).catch((e) => setError(String(e)));
 	}, []);
 
 	// Auto-dismiss the error toast — re-arms on every new error (including one
@@ -305,6 +318,7 @@ export function App() {
 			setOpenTerminal({ workspaceId: result.workspace.id, terminalId: result.terminalId });
 			if (result.setupWarning) setActionMessage(result.setupWarning);
 			refreshWorkspaces(selectedProjectId);
+			api.updateSettings({ lastOpenedWorkspaceId: result.workspace.id }).catch(() => {});
 		} catch (e) {
 			setModalError(String(e));
 		} finally {
@@ -345,6 +359,7 @@ export function App() {
 	async function handleSelectWorkspace(ws: WorkspaceWithStatus) {
 		autoFocusTerminalRef.current = true;
 		previewWorkspace(ws);
+		api.updateSettings({ lastOpenedWorkspaceId: ws.id }).catch(() => {});
 		if (ws.terminalId) return;
 		// No live terminal — resume in the same worktree rather than dead-ending.
 		setBusy(true);
@@ -418,11 +433,15 @@ export function App() {
 			// Confirming the dialog IS the "yes, even with uncommitted changes"
 			// signal — the warning was already shown there.
 			await api.deleteWorkspace(ws.id, false, true);
+			// Drop it immediately — don't block on a full workspace-list refetch
+			// (which recomputes a git diff summary for every OTHER workspace
+			// too); that runs in the background instead, same as create.
+			setWorkspaces((prev) => prev.filter((w) => w.id !== ws.id));
 			if (selectedWorkspaceId === ws.id) {
 				setSelectedWorkspaceId(null);
 				setOpenTerminal(null);
 			}
-			if (selectedProjectId) await refreshWorkspaces(selectedProjectId);
+			if (selectedProjectId) refreshWorkspaces(selectedProjectId);
 		} catch (e) {
 			setActionMessage(`Delete failed: ${e instanceof Error ? e.message : e}`);
 		} finally {

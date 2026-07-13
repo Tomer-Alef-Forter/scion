@@ -1,0 +1,1 @@
+ALTER TABLE `host_settings` ADD `last_opened_workspace_id` text;

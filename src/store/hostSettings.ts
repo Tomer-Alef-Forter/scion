@@ -7,6 +7,8 @@ import { type AgentType, type EditorType, hostSettings } from "../db/schema.ts";
 export interface HostSettings {
 	defaultAgent: AgentType;
 	defaultEditor: EditorType;
+	/** The workspace either front end reopens on its next launch, or null. */
+	lastOpenedWorkspaceId: string | null;
 }
 
 const SETTINGS_ROW_ID = 1;
@@ -17,9 +19,19 @@ export function getHostSettings(db: Db): HostSettings {
 		.from(hostSettings)
 		.where(eq(hostSettings.id, SETTINGS_ROW_ID))
 		.get();
-	if (row) return { defaultAgent: row.defaultAgent, defaultEditor: row.defaultEditor };
+	if (row) {
+		return {
+			defaultAgent: row.defaultAgent,
+			defaultEditor: row.defaultEditor,
+			lastOpenedWorkspaceId: row.lastOpenedWorkspaceId,
+		};
+	}
 
-	const defaults: HostSettings = { defaultAgent: "claude", defaultEditor: "vscode" };
+	const defaults: HostSettings = {
+		defaultAgent: "claude",
+		defaultEditor: "vscode",
+		lastOpenedWorkspaceId: null,
+	};
 	db.insert(hostSettings)
 		.values({ id: SETTINGS_ROW_ID, ...defaults })
 		.run();

@@ -70,6 +70,27 @@ async function main() {
 	process.on("SIGTERM", shutdown);
 
 	let initialProjectId: string | undefined;
+
+	// Reopen whatever was open last time, same as pressing Enter on it from
+	// the Dashboard — if it's gone (deleted since), or anything else about
+	// resuming it fails, just fall through to the normal Projects screen
+	// rather than blocking startup on it.
+	const lastOpenedId = store.getSettings().lastOpenedWorkspaceId;
+	if (lastOpenedId) {
+		const workspace = store.getWorkspace(lastOpenedId);
+		if (workspace) {
+			try {
+				const live = (await backend.listSessions(workspace.id)).find((s) => !s.exited);
+				const terminalId = live?.id ?? (await store.resumeWorkspace({ workspaceId: workspace.id })).terminalId;
+				status.markSeen(workspace.id);
+				await runAttach(terminalId, backend);
+				initialProjectId = workspace.projectId;
+			} catch {
+				// leave initialProjectId unset — just start at the Projects screen
+			}
+		}
+	}
+
 	for (;;) {
 		const action = await runInkApp(store, status, backend, initialProjectId);
 		if (action.type === "quit") break;
