@@ -3,7 +3,7 @@
 // "do you trust the files in this folder?" dialog. Every Scion worktree is a
 // brand-new directory the first time it's created, and it's a worktree of a
 // project the user already added to Scion — re-asking per worktree is pure
-// friction, not a real trust boundary, and `--dangerously-skip-permissions`
+// friction, not a real trust boundary, and `--permission-mode auto`
 // (see engine/agents.ts) doesn't cover this dialog since it's a separate
 // mechanism from per-tool-call permissions.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
