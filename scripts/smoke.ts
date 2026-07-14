@@ -299,13 +299,13 @@ async function main() {
 		// ---- buildAgentArgv: gemini/codex flag handling (pure, no spawn) ----
 
 		check(
-			"buildAgentArgv(gemini): --yolo, prompt via -i",
+			"buildAgentArgv(gemini): --approval-mode=yolo, prompt via -i",
 			JSON.stringify(buildAgentArgv("gemini", { prompt: "fix bug" })) ===
-				JSON.stringify(["--yolo", "-i", "fix bug"]),
+				JSON.stringify(["--approval-mode=yolo", "-i", "fix bug"]),
 		);
 		check(
 			"buildAgentArgv(gemini): no prompt omits -i",
-			JSON.stringify(buildAgentArgv("gemini", {})) === JSON.stringify(["--yolo"]),
+			JSON.stringify(buildAgentArgv("gemini", {})) === JSON.stringify(["--approval-mode=yolo"]),
 		);
 		check(
 			"buildAgentArgv(codex): bypass flag + prompt positional",
@@ -317,13 +317,13 @@ async function main() {
 		// how confident each one's flags are) ----
 
 		check(
-			"buildAgentArgv(cursor-agent): prompt as bare positional",
+			"buildAgentArgv(cursor-agent): auto-approval flags then prompt",
 			JSON.stringify(buildAgentArgv("cursor-agent", { prompt: "fix bug" })) ===
-				JSON.stringify(["fix bug"]),
+				JSON.stringify(["--force", "--trust", "fix bug"]),
 		);
 		check(
-			"buildAgentArgv(cursor-agent): no prompt -> empty argv",
-			JSON.stringify(buildAgentArgv("cursor-agent", {})) === JSON.stringify([]),
+			"buildAgentArgv(cursor-agent): no prompt -> flags only",
+			JSON.stringify(buildAgentArgv("cursor-agent", {})) === JSON.stringify(["--force", "--trust"]),
 		);
 		check(
 			"buildAgentArgv(droid): prompt as bare positional",
@@ -331,22 +331,22 @@ async function main() {
 				JSON.stringify(["fix bug"]),
 		);
 		check(
-			"buildAgentArgv(opencode): --prompt flag",
+			"buildAgentArgv(opencode): --auto then --prompt flag",
 			JSON.stringify(buildAgentArgv("opencode", { prompt: "fix bug" })) ===
-				JSON.stringify(["--prompt", "fix bug"]),
+				JSON.stringify(["--auto", "--prompt", "fix bug"]),
 		);
 		check(
-			"buildAgentArgv(opencode): no prompt -> empty argv",
-			JSON.stringify(buildAgentArgv("opencode", {})) === JSON.stringify([]),
+			"buildAgentArgv(opencode): no prompt -> --auto only",
+			JSON.stringify(buildAgentArgv("opencode", {})) === JSON.stringify(["--auto"]),
 		);
 		check(
-			"buildAgentArgv(copilot): allow-tool flag, prompt via -i",
+			"buildAgentArgv(copilot): --allow-all, prompt via -i",
 			JSON.stringify(buildAgentArgv("copilot", { prompt: "fix bug" })) ===
-				JSON.stringify(["--allow-tool=write", "-i", "fix bug"]),
+				JSON.stringify(["--allow-all", "-i", "fix bug"]),
 		);
 		check(
 			"buildAgentArgv(copilot): no prompt omits -i",
-			JSON.stringify(buildAgentArgv("copilot", {})) === JSON.stringify(["--allow-tool=write"]),
+			JSON.stringify(buildAgentArgv("copilot", {})) === JSON.stringify(["--allow-all"]),
 		);
 
 		// ---- branchName: slug shape, prefix handling, friendly names, dedup ----

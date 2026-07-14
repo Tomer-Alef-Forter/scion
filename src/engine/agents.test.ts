@@ -60,13 +60,13 @@ describe("buildAgentArgv: claude", () => {
 });
 
 describe("buildAgentArgv: gemini", () => {
-	it("always passes --yolo", () => {
-		expect(buildAgentArgv("gemini", {})).toEqual(["--yolo"]);
+	it("always passes --approval-mode=yolo", () => {
+		expect(buildAgentArgv("gemini", {})).toEqual(["--approval-mode=yolo"]);
 	});
 
 	it("passes the prompt via -i", () => {
 		expect(buildAgentArgv("gemini", { prompt: "do the thing" })).toEqual([
-			"--yolo",
+			"--approval-mode=yolo",
 			"-i",
 			"do the thing",
 		]);
@@ -74,7 +74,7 @@ describe("buildAgentArgv: gemini", () => {
 
 	it("ignores resumeSessionId (no resume support)", () => {
 		expect(buildAgentArgv("gemini", { prompt: "x", resumeSessionId: "sess" })).toEqual([
-			"--yolo",
+			"--approval-mode=yolo",
 			"-i",
 			"x",
 		]);
@@ -96,41 +96,46 @@ describe("buildAgentArgv: codex", () => {
 	});
 });
 
-describe("buildAgentArgv: cursor-agent / droid (bare positional prompt)", () => {
-	it("cursor-agent passes just the prompt with no flags", () => {
-		expect(buildAgentArgv("cursor-agent", { prompt: "hello" })).toEqual(["hello"]);
+describe("buildAgentArgv: cursor-agent / droid", () => {
+	it("cursor-agent passes auto-approval flags then the prompt", () => {
+		expect(buildAgentArgv("cursor-agent", { prompt: "hello" })).toEqual([
+			"--force",
+			"--trust",
+			"hello",
+		]);
 	});
 
-	it("cursor-agent returns an empty argv with no prompt", () => {
-		expect(buildAgentArgv("cursor-agent", {})).toEqual([]);
+	it("cursor-agent returns just the flags with no prompt", () => {
+		expect(buildAgentArgv("cursor-agent", {})).toEqual(["--force", "--trust"]);
 	});
 
-	it("droid passes just the prompt with no flags", () => {
+	it("droid passes just the prompt with no flags (autonomy set via settings file)", () => {
 		expect(buildAgentArgv("droid", { prompt: "hello" })).toEqual(["hello"]);
 	});
 });
 
 describe("buildAgentArgv: opencode", () => {
-	it("passes the prompt via --prompt", () => {
+	it("passes --auto then the prompt via --prompt", () => {
 		expect(buildAgentArgv("opencode", { prompt: "hello" })).toEqual([
+			"--auto",
 			"--prompt",
 			"hello",
 		]);
 	});
 
-	it("returns an empty argv with no prompt", () => {
-		expect(buildAgentArgv("opencode", {})).toEqual([]);
+	it("returns just --auto with no prompt", () => {
+		expect(buildAgentArgv("opencode", {})).toEqual(["--auto"]);
 	});
 });
 
 describe("buildAgentArgv: copilot", () => {
-	it("always passes --allow-tool=write", () => {
-		expect(buildAgentArgv("copilot", {})).toEqual(["--allow-tool=write"]);
+	it("always passes --allow-all", () => {
+		expect(buildAgentArgv("copilot", {})).toEqual(["--allow-all"]);
 	});
 
 	it("passes the prompt via -i", () => {
 		expect(buildAgentArgv("copilot", { prompt: "hello" })).toEqual([
-			"--allow-tool=write",
+			"--allow-all",
 			"-i",
 			"hello",
 		]);
