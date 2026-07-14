@@ -672,6 +672,41 @@ async function main() {
 		});
 		store.updateProject(project.id, { setupCommand: null });
 
+		// ---- createWorkspaces: batch fan-out of one prompt across N worktrees,
+		// with collision-free branches and per-target success/failure reporting ----
+
+		const batch = await store.createWorkspaces({
+			projectId: project.id,
+			prompt: "batch fan-out smoke test",
+			agents: ["claude", "gemini", "claude"],
+		});
+		check(
+			"createWorkspaces creates one workspace per target agent",
+			batch.succeeded.length === 3 && batch.failed.length === 0,
+		);
+		check(
+			"createWorkspaces preserves each target's agent preset",
+			JSON.stringify(batch.succeeded.map((s) => s.agentType)) ===
+				JSON.stringify(["claude", "gemini", "claude"]),
+		);
+		const batchBranches = batch.succeeded.map((s) => s.workspace.branch);
+		check(
+			"createWorkspaces assigns collision-free (distinct) branches",
+			new Set(batchBranches).size === batchBranches.length,
+		);
+		check(
+			"createWorkspaces actually creates each worktree on disk",
+			batch.succeeded.every((s) => existsSync(s.workspace.worktreePath)),
+		);
+		for (const s of batch.succeeded) {
+			getSession(s.terminalId)?.kill();
+			await store.deleteWorkspace({
+				workspaceId: s.workspace.id,
+				deleteBranch: true,
+				force: true,
+			});
+		}
+
 		// ---- orphaned worktrees: detection walks nested branch dirs correctly
 		// (a slash in the branch name nests the worktree deeper than a naive
 		// fixed-depth scan assumes — this exact repo's own "feat/smoke" branch

@@ -8,6 +8,7 @@ import { basename } from "node:path";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/db.ts";
 import {
+	type AgentType,
 	type Project,
 	type Workspace,
 	projects,
@@ -39,6 +40,26 @@ import {
 import { trustWorktree } from "../setup/trustWorktree.ts";
 import { type HostSettings, getHostSettings, updateHostSettings } from "./hostSettings.ts";
 
+/** One created workspace from a batch, tagged with the preset it launched. */
+export interface BatchCreateSuccess {
+	workspace: Workspace;
+	terminalId: string;
+	agentType: AgentType;
+	setupWarning?: string;
+}
+
+/** One target from a batch that couldn't be created, with the reason. */
+export interface BatchCreateFailure {
+	branch: string;
+	agentType: AgentType;
+	error: string;
+}
+
+export interface BatchCreateResult {
+	succeeded: BatchCreateSuccess[];
+	failed: BatchCreateFailure[];
+}
+
 export interface Store {
 	listProjects(): Project[];
 	addProject(repoPath: string): Promise<Project>;
@@ -54,6 +75,22 @@ export interface Store {
 		prompt: string;
 		name?: string;
 	}): Promise<{ workspace: Workspace; terminalId: string; setupWarning?: string }>;
+	/**
+	 * Fan one prompt out across N worktrees in a single call. Each entry in
+	 * `agents` produces one independent workspace running that preset on the
+	 * same prompt — so `["claude","claude","claude"]` gives three parallel
+	 * attempts to compare, and `["claude","gemini","codex"]` compares how three
+	 * CLIs handle the same task. Branch names are pre-allocated collision-free
+	 * up front. Each workspace is created all-or-nothing (a failure rolls its
+	 * own worktree back); the batch keeps going past a failed one and reports
+	 * which succeeded and which failed.
+	 */
+	createWorkspaces(args: {
+		projectId: string;
+		prompt: string;
+		agents: AgentType[];
+		name?: string;
+	}): Promise<BatchCreateResult>;
 	/**
 	 * Launch a fresh terminal in an EXISTING workspace's worktree — for when
 	 * its previous terminal ended (no background daemon keeps PTYs alive
@@ -96,6 +133,99 @@ async function listBranchNames(repoPath: string): Promise<string[]> {
 }
 
 export function createStore(db: Db, status: StatusStore, backend: PtyBackend): Store {
+	// The whole "create one worktree + launch one agent into it" flow, shared by
+	// the single- and batch-creation entry points so neither duplicates it. The
+	// caller has already picked a collision-free branch, an agent preset, and a
+	// display name. Everything past `addWorktree` is wrapped so a failure never
+	// strands a created worktree (or a half-inserted workspace row): we roll the
+	// whole thing back and rethrow, making each workspace all-or-nothing.
+	async function createWorkspaceInWorktree(args: {
+		project: Project;
+		branch: string;
+		agentType: AgentType;
+		prompt: string;
+		name: string;
+	}): Promise<{ workspace: Workspace; terminalId: string; setupWarning?: string }> {
+		const { project, branch, agentType, prompt, name } = args;
+
+		const { worktreePath, baseBranch } = await addWorktree({
+			projectId: project.id,
+			repoPath: project.repoPath,
+			branch,
+		});
+
+		let workspace: Workspace | undefined;
+		try {
+			// Before the agent ever launches — otherwise Claude Code's own
+			// workspace-trust dialog (separate from --permission-mode auto)
+			// would block on stdin the first time this brand-new directory opens.
+			trustWorktree(worktreePath);
+
+			workspace = {
+				id: randomUUID(),
+				projectId: project.id,
+				worktreePath,
+				branch,
+				baseBranch,
+				name,
+				agentType,
+				createdAt: Date.now(),
+			};
+			db.insert(workspaces).values(workspace).run();
+
+			// Runs concurrently with the agent launch, not before it — see
+			// engine/setupCommand.ts. Non-blocking: a failure only surfaces as a
+			// warning, it never stops (or waits on) the agent starting up.
+			const [setupResult, { terminalId }] = await Promise.all([
+				project.setupCommand
+					? runSetupCommand(worktreePath, project.setupCommand)
+					: Promise.resolve(null),
+				launchAgent({
+					backend,
+					agentType,
+					workspaceId: workspace.id,
+					worktreePath,
+					prompt,
+				}),
+			]);
+			const setupWarning =
+				setupResult && !setupResult.ok ? setupResult.message : undefined;
+			db.insert(terminalSessions)
+				.values({
+					id: terminalId,
+					workspaceId: workspace.id,
+					status: "active",
+					createdAt: Date.now(),
+					endedAt: null,
+				})
+				.run();
+
+			// PTY-exit -> markExited is wired by the daemon itself (it owns the
+			// session for its whole lifetime) — see daemon/socketServer.ts.
+			return { workspace, terminalId, setupWarning };
+		} catch (err) {
+			if (workspace) {
+				db.delete(workspaces).where(eq(workspaces.id, workspace.id)).run();
+			}
+			await removeWorktree({
+				repoPath: project.repoPath,
+				worktreePath,
+				deleteBranch: branch,
+			}).catch(() => {});
+			throw err;
+		}
+	}
+
+	function getProjectOrThrow(projectId: string): Project {
+		const project = db
+			.select()
+			.from(projects)
+			.where(eq(projects.id, projectId))
+			.get();
+		if (!project) throw new Error("Project not found");
+		return project;
+	}
+
 	return {
 		listProjects() {
 			return db.select().from(projects).all();
@@ -173,12 +303,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 		},
 
 		async createWorkspace({ projectId, prompt, name }) {
-			const project = db
-				.select()
-				.from(projects)
-				.where(eq(projects.id, projectId))
-				.get();
-			if (!project) throw new Error("Project not found");
+			const project = getProjectOrThrow(projectId);
 
 			const existing = await listBranchNames(project.repoPath);
 			const candidate = prompt.trim()
@@ -186,65 +311,66 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 				: generateFriendlyBranchName();
 			const branch = deduplicateBranchName(candidate, existing);
 
-			const { worktreePath, baseBranch } = await addWorktree({
-				projectId,
-				repoPath: project.repoPath,
-				branch,
-			});
-			// Before the agent ever launches — otherwise Claude Code's own
-			// workspace-trust dialog (separate from --permission-mode auto)
-			// would block on stdin the first time this brand-new directory opens.
-			trustWorktree(worktreePath);
-
 			// Captured now, not re-read later — a workspace keeps using the agent
 			// it was created with even if the default setting changes afterward.
 			const { defaultAgent } = getHostSettings(db);
 
-			const workspace: Workspace = {
-				id: randomUUID(),
-				projectId,
-				worktreePath,
+			return createWorkspaceInWorktree({
+				project,
 				branch,
-				baseBranch,
-				name: name ?? titleFromPrompt(prompt, branch),
 				agentType: defaultAgent,
-				createdAt: Date.now(),
-			};
-			db.insert(workspaces).values(workspace).run();
+				prompt,
+				name: name ?? titleFromPrompt(prompt, branch),
+			});
+		},
 
-			// Runs concurrently with the agent launch below, not before it — see
-			// engine/setupCommand.ts for why this never touches the agent's own
-			// launch command. Non-blocking: a failure only surfaces as a warning,
-			// it never stops (or waits on) the agent starting up.
-			const [setupResult, { terminalId }] = await Promise.all([
-				project.setupCommand
-					? runSetupCommand(worktreePath, project.setupCommand)
-					: Promise.resolve(null),
-				launchAgent({
-					backend,
-					agentType: defaultAgent,
-					workspaceId: workspace.id,
-					worktreePath,
-					prompt,
-				}),
-			]);
-			const setupWarning = setupResult && !setupResult.ok ? setupResult.message : undefined;
-			db.insert(terminalSessions)
-				.values({
-					id: terminalId,
-					workspaceId: workspace.id,
-					status: "active",
-					createdAt: Date.now(),
-					endedAt: null,
-				})
-				.run();
+		async createWorkspaces({ projectId, prompt, agents, name }) {
+			const project = getProjectOrThrow(projectId);
+			if (!Array.isArray(agents) || agents.length === 0) {
+				throw new Error("Batch requires at least one target agent");
+			}
 
-			// PTY-exit -> markExited is now wired by the daemon itself (it's the
-			// one process that actually owns the session for its whole
-			// lifetime, not just while this call is in flight) — see
-			// daemon/socketServer.ts's spawn handler.
+			// Pre-allocate a collision-free branch per target up front,
+			// deduplicating against BOTH the repo's existing branches and the
+			// ones we're about to create in this same batch — the shared
+			// random-suffix slug makes collisions unlikely but not impossible, and
+			// two targets from the same prompt must never race to the same name.
+			const taken = await listBranchNames(project.repoPath);
+			const baseLabel = name?.trim() || titleFromPrompt(prompt, "");
+			const plans = agents.map((agentType, i) => {
+				const candidate = prompt.trim()
+					? generateBranchName(prompt)
+					: generateFriendlyBranchName();
+				const branch = deduplicateBranchName(candidate, taken);
+				taken.push(branch);
+				// Distinguish otherwise-identical rows in the dashboard.
+				const label = baseLabel || branch;
+				const wsName =
+					agents.length > 1 ? `${label} · ${agentType} #${i + 1}` : label;
+				return { agentType, branch, name: wsName };
+			});
 
-			return { workspace, terminalId, setupWarning };
+			const succeeded: BatchCreateSuccess[] = [];
+			const failed: BatchCreateFailure[] = [];
+			for (const plan of plans) {
+				try {
+					const result = await createWorkspaceInWorktree({
+						project,
+						branch: plan.branch,
+						agentType: plan.agentType,
+						prompt,
+						name: plan.name,
+					});
+					succeeded.push({ ...result, agentType: plan.agentType });
+				} catch (err) {
+					failed.push({
+						branch: plan.branch,
+						agentType: plan.agentType,
+						error: err instanceof Error ? err.message : String(err),
+					});
+				}
+			}
+			return { succeeded, failed };
 		},
 
 		async resumeWorkspace({ workspaceId, prompt }) {

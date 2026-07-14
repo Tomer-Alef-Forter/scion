@@ -6,7 +6,10 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { type Command, CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { ConfirmDialog } from "./components/ConfirmDialog/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
-import { NewWorkspaceModal } from "./components/NewWorkspaceModal/NewWorkspaceModal";
+import {
+	type BatchOptions,
+	NewWorkspaceModal,
+} from "./components/NewWorkspaceModal/NewWorkspaceModal";
 import { PrStatusBadge } from "./components/PrStatus/PrStatusBadge";
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal";
@@ -299,11 +302,48 @@ export function App() {
 			.catch(() => setLiveSessionCount(0));
 	}
 
-	async function handleCreateWorkspace(prompt: string, name?: string) {
+	async function handleCreateWorkspace(prompt: string, name?: string, batch?: BatchOptions) {
 		if (!selectedProjectId) return;
 		setBusy(true);
 		setModalError(null);
 		try {
+			if (batch) {
+				const result = await api.createWorkspaceBatch(selectedProjectId, prompt, {
+					...batch,
+					name,
+				});
+				const first = result.succeeded[0];
+				if (!first) {
+					// Nothing was created — keep the modal open with the reason.
+					setModalError(
+						`Batch failed: ${result.failed.map((f) => f.error).join("; ") || "unknown error"}`,
+					);
+					return;
+				}
+				setShowNewWorkspaceModal(false);
+				// Add every created workspace to the grid immediately (no per-item
+				// diff recompute); the background refresh backfills status/diff.
+				setWorkspaces((prev) => [
+					...prev,
+					...result.succeeded.map((s) => ({
+						...s.workspace,
+						status: "starting" as const,
+						terminalId: s.terminalId,
+						diff: null,
+						usage: null,
+					})),
+				]);
+				// Focus the first one so it's immediately usable.
+				setSelectedWorkspaceId(first.workspace.id);
+				setActiveTab("terminal");
+				setOpenTerminal({ workspaceId: first.workspace.id, terminalId: first.terminalId });
+				const parts = [`Created ${result.succeeded.length} workspaces`];
+				if (result.failed.length > 0) parts.push(`${result.failed.length} failed`);
+				setActionMessage(parts.join(" · "));
+				refreshWorkspaces(selectedProjectId);
+				api.updateSettings({ lastOpenedWorkspaceId: first.workspace.id }).catch(() => {});
+				return;
+			}
 			const result = await api.createWorkspace(selectedProjectId, prompt, name);
 			setShowNewWorkspaceModal(false);
 			// Show it immediately — the create response already has everything
