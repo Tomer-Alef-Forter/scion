@@ -76,6 +76,57 @@ the same setup step.
 
 ---
 
+## 3a. Security model — localhost by default
+
+The web control surface is powerful: over it you can spawn agents, type
+arbitrary input into any live agent's terminal, delete workspaces, and read
+any file in a worktree. Agents run auto-approving (the worktree is the safety
+boundary, not per-action confirmation), so anyone who can reach this surface
+effectively has code execution on your machine. It is therefore locked down by
+default.
+
+**Default: localhost only, no auth.** With zero configuration, both the backend
+(`5177`) and the Vite dev server (`5173`) bind to `127.0.0.1` — reachable only
+from the same machine. Nobody on your Wi-Fi/LAN can reach them. On a
+same-machine trust model no token is needed, so the local experience is
+unchanged and requires no setup.
+
+**Opt-in: LAN / remote access requires a token.** To reach the UI from another
+device, set `SCION_HOST` when starting the server:
+
+```bash
+SCION_HOST=0.0.0.0 bun run web        # or a specific interface, e.g. 192.168.1.50
+```
+
+Any non-loopback bind switches on authentication automatically:
+
+- On first network-mode run, Scion generates a random shared secret and stores
+  it at `~/.scion/web-token` (0600). It's printed to the console on startup.
+- Every `/api/*` request and every WebSocket (`/ws/terminal/:id`, `/ws/events`)
+  must carry the token, or it's rejected with `401`. The terminal socket — the
+  most dangerous surface — is gated the same as everything else.
+- Hand the token to the browser once by opening the UI with it in the URL:
+  `http://<host>:5177/?token=<token>`. The frontend captures it into
+  `localStorage`, strips it from the address bar, and attaches it to every
+  request thereafter (as an `x-scion-token` header for HTTP, and as a `token`
+  query param on the WebSocket handshake, since browsers can't set custom
+  headers there).
+
+To rotate the token, delete `~/.scion/web-token` and restart in network mode; a
+new one is generated (all existing browser sessions must re-open with the new
+`?token=`).
+
+> **CORS is not the boundary.** The server does check the `Origin` header, but
+> that's only a browser convention — it stops a malicious web page from
+> scripting the API cross-origin, and does nothing against a direct `curl` or
+> raw WebSocket client that omits the header. The real boundary is the loopback
+> bind plus the token above. Don't rely on CORS for security.
+
+> The PTY daemon (a Unix-domain socket) and the Claude-hook receiver (bound to
+> `127.0.0.1`) are never network-reachable regardless of `SCION_HOST`.
+
+---
+
 ## 4. The layout
 
 Three columns: **Projects** (left) → **Workspaces** (middle) → a **detail

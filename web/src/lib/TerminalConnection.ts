@@ -9,6 +9,8 @@
 // signal doesn't: a generation counter (so a stale in-flight connect() from
 // before a reconnect can't clobber a newer socket), and a `terminated` flag
 // once the PTY itself has exited (no point reconnecting to a dead process).
+import { withAuthParam } from "./auth";
+
 export type TerminalConnectionState = "connecting" | "reconnecting" | "error";
 
 export type TerminalControlMessage =
@@ -41,8 +43,10 @@ const INITIAL_RECONNECT_DELAY_MS = 500;
 const MAX_RECONNECT_DELAY_MS = 10_000;
 const MAX_RECONNECT_ATTEMPTS = 12;
 
-// Same-origin `/ws/terminal/:terminalId` — no auth token or relay hop, since
-// this server only ever talks to the one local user running it.
+// Same-origin `/ws/terminal/:terminalId`. In the default localhost-only mode
+// no token is attached; in network mode (SCION_HOST set) withAuthParam appends
+// the shared secret as a `token` query param, since browsers can't set custom
+// headers on a WebSocket handshake.
 function buildTerminalUrl(target: TerminalConnectionTarget, skipReplay: boolean): string {
 	const protocol = window.location.protocol === "https:" ? "wss" : "ws";
 	const url = new URL(
@@ -52,7 +56,7 @@ function buildTerminalUrl(target: TerminalConnectionTarget, skipReplay: boolean)
 	// xterm already holds the scrollback locally on a reconnect — skip the
 	// server's replay dump once we know we've already gotten it once.
 	if (skipReplay) url.searchParams.set("replay", "0");
-	return url.toString();
+	return withAuthParam(url).toString();
 }
 
 export function createTerminalConnection(

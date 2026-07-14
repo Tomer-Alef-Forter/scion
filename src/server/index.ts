@@ -8,13 +8,22 @@
 // them anymore.
 import { existsSync, writeFileSync } from "node:fs";
 import { serve } from "@hono/node-server";
-import { DATA_DIR, DB_PATH, INSTALLED_MARKER, WEB_PORT } from "../config.ts";
+import {
+	AUTH_TOKEN_PATH,
+	DATA_DIR,
+	DB_PATH,
+	INSTALLED_MARKER,
+	isLoopbackHost,
+	WEB_HOST,
+	WEB_PORT,
+} from "../config.ts";
 import { createDb } from "../db/db.ts";
 import { createDaemonPtyBackend } from "../engine/ptyBackend.ts";
 import { createStatusStore } from "../engine/status.ts";
 import { installClaudeHooks } from "../setup/installClaudeHooks.ts";
 import { createStore } from "../store/projects.ts";
 import { createServerApp } from "./app.ts";
+import { loadOrCreateAuthToken } from "./auth.ts";
 
 async function main() {
 	if (!existsSync(INSTALLED_MARKER)) {
@@ -37,10 +46,23 @@ async function main() {
 	// already listens on) fires exactly as if the change happened locally.
 	backend.onStatusChanged((workspaceId) => status.events.emit("change", workspaceId));
 
-	const { app, injectWebSocket } = createServerApp({ store, status, backend });
+	// Loopback (the default) is a same-machine trust model — no token needed.
+	// Any non-loopback bind (SCION_HOST=0.0.0.0 or a concrete LAN IP) exposes
+	// the control surface to the network, so we require a shared-secret token.
+	const loopbackOnly = isLoopbackHost(WEB_HOST);
+	const authToken = loopbackOnly ? null : loadOrCreateAuthToken();
 
-	const httpServer = serve({ fetch: app.fetch, port: WEB_PORT }, (info) => {
-		console.log(`[scion] web server listening on http://localhost:${info.port}`);
+	const { app, injectWebSocket } = createServerApp({ store, status, backend, authToken });
+
+	const httpServer = serve({ fetch: app.fetch, port: WEB_PORT, hostname: WEB_HOST }, (info) => {
+		if (loopbackOnly) {
+			console.log(`[scion] web server listening on http://localhost:${info.port} (localhost only)`);
+		} else {
+			console.log(`[scion] web server listening on http://${WEB_HOST}:${info.port} (NETWORK-EXPOSED)`);
+			console.log(`[scion] auth required — open the UI with the token in the URL, e.g.:`);
+			console.log(`[scion]   http://<this-host>:${info.port}/?token=${authToken}`);
+			console.log(`[scion] token stored at ${AUTH_TOKEN_PATH}`);
+		}
 	});
 	injectWebSocket(httpServer);
 
