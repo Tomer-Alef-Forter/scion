@@ -10,6 +10,7 @@
   "scripts": {
     "start": "tsx src/index.tsx",
     "server": "tsx src/server/index.ts",
+    "supervisor": "tsx src/daemon/supervisor.ts",
     "web": "bun run --cwd web build && tsx src/server/index.ts",
     "web:dev": "tsx scripts/web-dev.ts",
     "web:smoke": "tsx scripts/run-isolated.ts scripts/web-smoke.ts",
