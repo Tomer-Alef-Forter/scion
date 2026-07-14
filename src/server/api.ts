@@ -86,6 +86,19 @@ async function enrichWorkspace(
 	};
 }
 
+// Kills every live agent for a single workspace WITHOUT stopping the daemon or
+// touching any other workspace/project. Each PTY is its own OS session, so
+// killing this subset never signals another project's agents. Composed from the
+// same primitives store.deleteWorkspace() uses, so it stays a pure blast-radius
+// scoping helper — no new daemon machinery. Returns how many sessions it killed.
+async function stopWorkspaceAgents(backend: PtyBackend, workspaceId: string): Promise<number> {
+	const live = (await backend.listSessions(workspaceId)).filter((s) => !s.exited);
+	for (const session of live) {
+		await backend.killSession(session.id);
+	}
+	return live.length;
+}
+
 export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 	const api = new Hono();
 
@@ -129,8 +142,12 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 		return c.json({ liveSessionCount: sessions.filter((s) => !s.exited).length });
 	});
 
-	// Stops the daemon process — kills EVERY live agent across every project,
-	// not just the current one, since the daemon is a single shared process.
+	// GLOBAL kill switch (explicit, wide blast radius): stops the daemon process
+	// itself, which kills EVERY live agent across EVERY project at once, since
+	// the daemon is a single shared process. This is the deliberate "stop
+	// everything" escape hatch — to stop just one project's or one workspace's
+	// agents while leaving the daemon and every other project running, use the
+	// scoped POST /projects/:id/agents/stop or /workspaces/:id/agents/stop below.
 	api.post("/daemon/shutdown", async (c) => {
 		await backend.shutdownDaemon();
 		return c.json({ ok: true });
@@ -158,6 +175,20 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 	api.delete("/projects/:id", (c) => {
 		store.removeProject(c.req.param("id"));
 		return c.json({ ok: true });
+	});
+
+	// Scoped stop: kills every live agent across THIS project's workspaces only,
+	// leaving the daemon and every OTHER project's agents running. Preferred
+	// over the global /daemon/shutdown whenever the intent is to stop work on
+	// one project.
+	api.post("/projects/:id/agents/stop", async (c) => {
+		const projectId = c.req.param("id");
+		if (!store.getProject(projectId)) return c.json({ error: "Project not found" }, 404);
+		let killed = 0;
+		for (const workspace of store.listWorkspaces(projectId)) {
+			killed += await stopWorkspaceAgents(backend, workspace.id);
+		}
+		return c.json({ ok: true, killed });
 	});
 
 	// setupCommand runs standalone in a new workspace's worktree, before the
@@ -225,6 +256,15 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 		} catch (err) {
 			return c.json({ error: errMsg(err) }, 400);
 		}
+	});
+
+	// Scoped stop: kills every live agent for a single workspace, leaving the
+	// daemon and all other workspaces/projects untouched.
+	api.post("/workspaces/:id/agents/stop", async (c) => {
+		const workspaceId = c.req.param("id");
+		if (!store.getWorkspace(workspaceId)) return c.json({ error: "Workspace not found" }, 404);
+		const killed = await stopWorkspaceAgents(backend, workspaceId);
+		return c.json({ ok: true, killed });
 	});
 
 	api.post("/workspaces/:id/rename", async (c) => {
