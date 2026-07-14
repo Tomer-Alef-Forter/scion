@@ -207,7 +207,6 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 				branch,
 				baseBranch,
 				name: name ?? titleFromPrompt(prompt, branch),
-				type: "worktree",
 				agentType: defaultAgent,
 				createdAt: Date.now(),
 			};

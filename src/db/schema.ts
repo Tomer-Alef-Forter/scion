@@ -1,7 +1,6 @@
 // Drizzle schema for Scion's local SQLite DB: projects, their workspaces,
 // terminal sessions, and the agent-status bindings derived from hook events.
 // Deliberately no cloud-sync tables — everything here is local-only.
-import { sql } from "drizzle-orm";
 import {
 	index,
 	integer,
@@ -42,7 +41,6 @@ export const workspaces = sqliteTable(
 		branch: text().notNull(),
 		baseBranch: text("base_branch"),
 		name: text().notNull().default(""),
-		type: text().$type<"main" | "worktree">().notNull().default("worktree"),
 		// Captured from the global default at creation time — a workspace keeps
 		// using the agent it was created with (resume relaunches the same CLI),
 		// independent of later settings changes.
@@ -54,12 +52,7 @@ export const workspaces = sqliteTable(
 			.notNull()
 			.$defaultFn(() => Date.now()),
 	},
-	(table) => [
-		index("workspaces_project_id_idx").on(table.projectId),
-		uniqueIndex("workspaces_one_main_per_project")
-			.on(table.projectId)
-			.where(sql`type = 'main'`),
-	],
+	(table) => [index("workspaces_project_id_idx").on(table.projectId)],
 );
 
 export const terminalSessions = sqliteTable(
