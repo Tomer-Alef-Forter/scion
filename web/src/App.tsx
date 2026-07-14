@@ -311,7 +311,13 @@ export function App() {
 			// that runs in the background instead and just backfills status/diff.
 			setWorkspaces((prev) => [
 				...prev,
-				{ ...result.workspace, status: "starting", terminalId: result.terminalId, diff: null },
+				{
+					...result.workspace,
+					status: "starting",
+					terminalId: result.terminalId,
+					diff: null,
+					usage: null,
+				},
 			]);
 			setSelectedWorkspaceId(result.workspace.id);
 			setActiveTab("terminal");

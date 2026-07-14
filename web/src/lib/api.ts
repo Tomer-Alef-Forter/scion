@@ -18,6 +18,20 @@ export interface DiffSummary {
 	uncommitted: number;
 }
 
+// Cumulative token usage for a workspace's current Claude Code session, read
+// straight from Claude Code's own transcript file (see
+// src/engine/usage.ts) — real counts, not an estimate. Deliberately no cost
+// field: Claude Code's hook payloads and transcripts carry no price/cost
+// data at all, so there's nothing real to show (see docs/WEB_GUIDE.md §12).
+export interface SessionUsage {
+	totalInputTokens: number;
+	totalOutputTokens: number;
+	totalCacheCreationTokens: number;
+	totalCacheReadTokens: number;
+	turnCount: number;
+	usageUpdatedAt: number | null;
+}
+
 export type AgentStatus = "working" | "waiting" | "review" | "idle" | "starting" | "done";
 export type AgentType =
 	| "claude"
@@ -48,6 +62,7 @@ export interface WorkspaceWithStatus {
 	status: AgentStatus;
 	terminalId: string | null;
 	diff: DiffSummary | null;
+	usage: SessionUsage | null;
 }
 
 export interface CreateWorkspaceResult {

@@ -223,7 +223,41 @@ worktrees.
 
 ---
 
-## 11. Troubleshooting
+## 12. Token usage (and why there's no cost)
+
+Each workspace card shows a running **token count** (e.g. `12.3k tokens`)
+once its Claude Code agent has completed at least one turn — the sum of
+input + output tokens for the session so far.
+
+Where this comes from: Claude Code's lifecycle hooks (`Stop`, `SessionEnd`,
+...) do **not** include token counts, cost, or turn counts in their JSON
+payload — we checked the hooks reference and inspected real payloads to
+confirm this. What every hook payload *does* include is `transcript_path`,
+pointing at that session's own transcript JSONL
+(`~/.claude/projects/<slug>/<session_id>.jsonl`). Each assistant message
+Claude Code writes there carries a `usage` block (`input_tokens`,
+`output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`) —
+real numbers Claude Code recorded itself. On every `Stop` event Scion
+re-reads that file and re-sums those fields (see `src/engine/usage.ts`),
+so the count shown is always a real, current total straight from Claude
+Code's own record of the session — never an estimate.
+
+**There is deliberately no cost/$ figure anywhere in Scion.** No cost or
+price field exists in the hook payload or the transcript to read a real
+number from, and computing one would mean hardcoding a per-model price table
+that would drift out of sync with actual pricing/plans — so rather than show
+a number that might be wrong, Scion shows only the token counts it can
+verify are real. This is entirely local bookkeeping against your own
+`~/.claude` transcripts; nothing is ever sent to Anthropic's usage API or
+any other external service.
+
+Only Claude Code workspaces get this — other agents (Gemini CLI, Codex, ...)
+don't write a compatible transcript format, so their cards show no token
+count.
+
+---
+
+## 13. Troubleshooting
 
 - **Dashboard shows no live status.** Same first check as the terminal UI:
   confirm `~/.scion/hooks/notify.sh` exists and is executable, and
