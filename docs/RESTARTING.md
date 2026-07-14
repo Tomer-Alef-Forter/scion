@@ -44,6 +44,23 @@ pkill -f "src/daemon/index.ts"
 bun run web:dev
 ```
 
+### Just the daemon (`bun run restart-daemon`)
+
+To restart only the daemon — e.g. to pick up daemon-side code changes without
+touching the front end — there's a one-liner:
+
+```bash
+bun run restart-daemon
+```
+
+It stops this instance's daemon (found via its own socket, so other checkouts
+are untouched), clears a stale socket if a hard kill left one, and spawns a
+fresh daemon detached (logging to `~/.scion/daemon.log`), waiting until it's
+listening. It **refuses to run in supervisor mode** — there the supervisor owns
+the daemon and respawns it without killing agents, so a plain `pkill -f
+src/daemon/index.ts` is what you want instead. As with any daemon restart, this
+closes every PTY the daemon owns.
+
 In this mode a daemon crash or restart ends every live agent's PTY. Worktrees,
 branches, and DB state are untouched, but the live terminal is gone.
 
