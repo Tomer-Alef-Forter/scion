@@ -17,6 +17,7 @@
     "uninstall-hooks": "tsx scripts/uninstall-hooks.ts",
     "smoke": "tsx scripts/run-isolated.ts scripts/smoke.ts",
     "daemon-smoke": "tsx scripts/run-isolated.ts scripts/daemon-smoke.ts",
+    "persistence-smoke": "tsx scripts/run-isolated.ts scripts/persistence-smoke.ts",
     "test": "vitest run && bun run --cwd web test",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
