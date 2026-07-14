@@ -52,8 +52,26 @@ Agent status: `working` (turn running) · `waiting` (needs input) · `review`
 
 ## What it doesn't do
 
-PTYs don't survive an app restart (no background daemon); no PR review, cloud
-sync, or multi-agent presets. **Run one front end at a time** — the terminal UI
-and the web UI are separate processes, each with its own in-memory PTY table,
-so an agent started in one isn't visible/attachable from the other. See
-`~/.scion/host.db` for persisted state.
+A background daemon (auto-spawned the first time either front end needs a
+PTY) owns every live agent process independently of the terminal UI and the
+web server. That means **both front ends can run at once** against the same
+`~/.scion/host.db`, a workspace started in one is attachable from the other,
+and restarting either front end never kills a live agent. Real limitations
+that remain:
+
+- **A crash of the daemon itself still ends every live agent's process**
+  (closing its socket SIGHUPs every PTY it owns) — worktrees, branches, and DB
+  state are untouched, but the live terminal is gone and you'll resume rather
+  than reattach. Surviving a daemon crash too would need real fd-passing, a
+  separate effort.
+- **No cloud sync** — everything lives in `~/.scion/host.db` and plain
+  worktrees on disk, on one machine.
+- **PR creation, not PR review.** The web UI can push a branch and open a
+  GitHub PR via `gh` (one click); there's no in-app PR viewing/commenting/
+  approval flow. Merging back (`m` / **Merge**) is always local, straight into
+  your base branch.
+- 7 agent CLI presets exist (Claude Code, Gemini CLI, Codex, Cursor Agent,
+  Droid, OpenCode, GitHub Copilot), configurable as the default in the web
+  UI's Settings — but only Claude Code reports live `working`/`waiting`/
+  `review` status via lifecycle hooks; the others just show `working` for the
+  life of the session.

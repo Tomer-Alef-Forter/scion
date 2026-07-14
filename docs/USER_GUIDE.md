@@ -115,7 +115,8 @@ Type a plain-English task. Scion then:
 2. Creates a branch + worktree off the base branch
    (`git worktree add --no-track -b <branch> <path> <base>`).
 3. Records the base branch in git config so diff/merge can find it later.
-4. Launches `claude` in that worktree, seeded with your task prompt.
+4. Launches the default agent (`claude` unless changed — see §10) in that
+   worktree, seeded with your task prompt.
 
 `enter` to create, `esc` to cancel.
 
@@ -201,7 +202,16 @@ repo checkout**:
   restarting the terminal UI or the web server does not (a background daemon,
   auto-spawned on first use, owns every live PTY independently of either
   front end). Worktrees, branches, and DB state always persist regardless.
-- No PR review, no cloud sync, no multi-agent presets, no GUI.
+- No cloud sync, no GUI (that's what the [Web Guide](./WEB_GUIDE.md) is for),
+  and no in-app PR review — merging (`m`) is always local, straight into your
+  base branch. PR *creation* (push + open a GitHub PR via `gh`) exists, but
+  only as a web UI action (see [Web Guide §8](./WEB_GUIDE.md#8-merging-back-or-opening-a-pr));
+  there's no equivalent key here.
+- 7 agent CLI presets exist under the hood (Claude Code, Gemini CLI, Codex,
+  Cursor Agent, Droid, OpenCode, GitHub Copilot), but the terminal UI has no
+  screen to choose one — `n` always launches whatever's set as the default
+  agent in `~/.scion/host.db` (shared with the web UI's Settings; `claude`
+  unless you've changed it there).
 - `x` on the dashboard removes the **worktree** but keeps the branch. `x` on
   Projects removes the project from the list only — it doesn't touch your repo.
 
