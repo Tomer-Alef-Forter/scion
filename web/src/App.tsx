@@ -740,12 +740,11 @@ export function App() {
 										<div className="truncate text-sm font-medium">
 											{selectedWorkspace.name}
 										</div>
-										<div className="truncate text-xs text-muted-foreground">
-											{selectedWorkspace.branch}
-										</div>
-										<div className="mt-1 flex flex-wrap items-center gap-2">
-											<PrStatusBadge key={selectedWorkspace.id} workspaceId={selectedWorkspace.id} />
+										<div className="mt-0.5">
 											<TokenUsageBadge usage={selectedWorkspace.usage} />
+										</div>
+										<div className="mt-1">
+											<PrStatusBadge key={selectedWorkspace.id} workspaceId={selectedWorkspace.id} />
 										</div>
 									</div>
 									<div className="flex shrink-0 gap-1.5">
