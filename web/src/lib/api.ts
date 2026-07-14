@@ -75,6 +75,23 @@ export interface FileEntry {
 	path: string;
 }
 
+export type PrState = "OPEN" | "CLOSED" | "MERGED";
+export type PrCheckState = "passing" | "failing" | "pending" | "none";
+
+export interface PullRequestStatus {
+	url: string;
+	number: number;
+	title: string;
+	state: PrState;
+	isDraft: boolean;
+	reviewDecision: string | null;
+	checks: {
+		state: PrCheckState;
+		total: number;
+		failing: string[];
+	};
+}
+
 async function requestText(path: string): Promise<string> {
 	const res = await fetch(`/api${path}`, { headers: { ...authHeaders() } });
 	if (!res.ok) {
@@ -166,6 +183,14 @@ export const api = {
 	// + authenticated). Falls back to an existing PR's URL on a repeat call.
 	createPullRequest: (id: string) =>
 		request<{ url: string }>(`/workspaces/${id}/pr`, { method: "POST" }),
+	// Read-only PR state/review/CI status for the workspace's branch — `null`
+	// when there's no PR, or `gh` isn't installed/authenticated. Server-side
+	// cached (~30s) so `force` (the manual refresh button) is the only path
+	// that's guaranteed to hit `gh` again.
+	getPullRequestStatus: (id: string, force = false) =>
+		request<PullRequestStatus | null>(
+			`/workspaces/${id}/pr-status${force ? "?force=true" : ""}`,
+		),
 	openInEditor: (id: string) =>
 		request<{ ok: true }>(`/workspaces/${id}/open`, { method: "POST" }),
 	markSeen: (id: string) =>

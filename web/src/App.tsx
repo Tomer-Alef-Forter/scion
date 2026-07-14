@@ -7,6 +7,7 @@ import { type Command, CommandPalette } from "./components/CommandPalette/Comman
 import { ConfirmDialog } from "./components/ConfirmDialog/ConfirmDialog";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
 import { NewWorkspaceModal } from "./components/NewWorkspaceModal/NewWorkspaceModal";
+import { PrStatusBadge } from "./components/PrStatus/PrStatusBadge";
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal";
 import { type WebTerminalHandle, WebTerminal } from "./components/WebTerminal";
@@ -687,13 +688,16 @@ export function App() {
 					<div className="flex flex-1 flex-col overflow-hidden">
 						{selectedWorkspace ? (
 							<>
-								<div className="flex items-center justify-between border-b border-border px-4 py-2">
+								<div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
 									<div className="min-w-0">
 										<div className="truncate text-sm font-medium">
 											{selectedWorkspace.name}
 										</div>
 										<div className="truncate text-xs text-muted-foreground">
 											{selectedWorkspace.branch}
+										</div>
+										<div className="mt-1">
+											<PrStatusBadge key={selectedWorkspace.id} workspaceId={selectedWorkspace.id} />
 										</div>
 									</div>
 									<div className="flex shrink-0 gap-1.5">

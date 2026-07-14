@@ -6,6 +6,10 @@ import type { AgentType, EditorType, Project, Workspace } from "../db/schema.ts"
 import { getCachedDiffSummary, getUnifiedDiff, invalidateDiffCache } from "../engine/diff.ts";
 import { listFiles, readWorktreeFile } from "../engine/files.ts";
 import { mergeBack } from "../engine/mergeBack.ts";
+import {
+	getCachedPullRequestStatus,
+	invalidatePullRequestStatusCache,
+} from "../engine/prStatus.ts";
 import { createPullRequest } from "../engine/pullRequest.ts";
 import type { PtyBackend } from "../engine/ptyBackend.ts";
 import type { StatusStore } from "../engine/status.ts";
@@ -328,6 +332,21 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 		} catch (err) {
 			return c.json({ error: errMsg(err) }, 400);
 		}
+	});
+
+	// Read-only PR status (state, review decision, CI checks) for the
+	// workspace's branch, via `gh pr view` — see engine/prStatus.ts. Returns
+	// `null` (not a 4xx) whenever there's nothing to show: no PR for this
+	// branch, `gh` missing/unauthenticated, no network, etc. `?force=true`
+	// bypasses the server-side cache — used by the UI's manual refresh button.
+	api.get("/workspaces/:id/pr-status", async (c) => {
+		const resolved = resolveWorkspace(store, c.req.param("id"));
+		if (!resolved) return c.json({ error: "Workspace not found" }, 404);
+		if (c.req.query("force") === "true") {
+			invalidatePullRequestStatusCache(resolved.workspace.worktreePath);
+		}
+		const prStatus = await getCachedPullRequestStatus(resolved.workspace.worktreePath);
+		return c.json(prStatus);
 	});
 
 	api.post("/workspaces/:id/open", async (c) => {
