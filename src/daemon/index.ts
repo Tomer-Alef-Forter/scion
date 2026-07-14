@@ -6,11 +6,22 @@
 // when no daemon is already listening; not meant to be launched by a user
 // directly (though `tsx src/daemon/index.ts` works fine for debugging).
 //
-// v1 scope (deliberately): a crash of THIS process still kills every live
-// agent (closing the daemon closes every PTY master fd, which SIGHUPs the
-// child on the other end) — same as today. Only front-end restarts are made
-// safe. Surviving a daemon crash too would need real fd-passing (SCM_RIGHTS),
-// a separate, larger effort.
+// Blast radius (deliberate, v1): this is a SINGLE process hosting every
+// project's PTYs, so an UNEXPECTED crash of it still takes down every live
+// agent across every project at once — closing the daemon closes every PTY
+// master fd, which SIGHUPs the child on the other end. That residual risk is
+// inherent to the single-process design; surviving a daemon crash too would
+// need real fd-passing (SCM_RIGHTS), a separate, larger effort. Front-end
+// restarts are already safe (they don't own the PTYs).
+//
+// What IS isolated between projects: every node-pty child is its own OS
+// session (forkpty() setsid()s it) and sessions are tracked + killed
+// individually, so an INTENTIONAL / targeted stop can hit just one project's
+// or one workspace's agents without signalling any other project's. See
+// src/server/api.ts: POST /projects/:id/agents/stop and
+// /workspaces/:id/agents/stop are the scoped stops; killAll() below (reached
+// only via the explicit global /daemon/shutdown) is the "stop everything"
+// path that also stops this whole process.
 import { existsSync, unlinkSync } from "node:fs";
 import * as net from "node:net";
 import { DAEMON_SOCK, DB_PATH } from "../config.ts";
@@ -79,7 +90,10 @@ async function main() {
 		if (idleTimer) clearInterval(idleTimer);
 		// Explicit rather than relying on the OS to SIGHUP children when our
 		// fds close — deterministic, and matches what index.tsx/server's
-		// index.ts used to do themselves before PTY ownership moved here.
+		// index.ts used to do themselves before PTY ownership moved here. This
+		// is the GLOBAL kill (every project's agents at once); scoped stops
+		// never reach here — they kill individual sessions and leave the daemon
+		// running (see src/server/api.ts's /agents/stop routes).
 		try {
 			killAll();
 		} catch {}
