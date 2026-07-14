@@ -46,6 +46,9 @@ interface AttentionWorkspace {
 export function notifyAgentAttention(ws: AttentionWorkspace, onOpen: () => void): void {
 	if (!isNotificationsEnabled()) return;
 	if (!("Notification" in window) || Notification.permission !== "granted") return;
+	// The user is already looking at the tab — the in-app indicators (status
+	// pill, tab title badge) cover it; an OS notification would just be noise.
+	if (document.hasFocus()) return;
 
 	const title = ws.status === "waiting" ? `${ws.name} needs input` : `${ws.name} is ready to review`;
 	const body =
