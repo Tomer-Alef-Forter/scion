@@ -79,10 +79,35 @@ async function enrichWorkspace(
 	if (liveSessions.length === 0) {
 		derivedStatus = "done";
 	} else if (workspace.agentType !== "claude") {
-		// Only Claude Code reports lifecycle events via hooks — other agents
-		// have no equivalent, so there's no way to distinguish
-		// working/waiting/review for them. Best effort: just "working" for
-		// the life of the session.
+		// Only Claude Code has a hook actually wired up (see
+		// setup/installClaudeHooks.ts, which merges hook commands into
+		// ~/.claude/settings.json) — other agents fall back to a flat
+		// "working" for the life of the session.
+		//
+		// That's a gap in SCION's own plumbing, not a limitation of these CLIs:
+		// research as of 2026-07 found that gemini, codex, and droid all ship a
+		// hooks system structurally identical to Claude's own (external command,
+		// JSON event payload on stdin, configured via a settings/config file) —
+		// see the per-agent comments in engine/agents.ts for exact event names
+		// (e.g. gemini's Notification/ToolPermission and BeforeAgent/AfterAgent;
+		// codex's PermissionRequest/Stop hooks, or its `notify` config key plus
+		// the agent-turn-complete event, or a JSON-RPC `codex app-server` mode;
+		// droid's PreToolUse/Notification/Stop). engine/status.ts's
+		// EVENT_LIFECYCLE map already has aliases for several of these event
+		// names (agent-turn-complete, exec_approval_request,
+		// apply_patch_approval_request, task_started/task_complete, etc.) — the
+		// missing half is a per-agent installer analogous to
+		// installClaudeHooks.ts that writes that agent's own hook config to
+		// point at hooks/notify.sh (or a variant of it), which nothing does yet.
+		// cursor-agent has a hooks system too (.cursor/hooks.json) but docs
+		// don't confirm it fires for the local CLI (vs. IDE/Cloud Agents only).
+		// opencode's status story is real but shaped differently — no
+		// config-only hook, it needs an actual JS/TS plugin file (events like
+		// session.idle/permission.asked), or polling its `opencode serve` HTTP
+		// status endpoint instead of a push-based hook. copilot's only official
+		// status surface is --output-format=json log output; its richer
+		// events.jsonl activity-state file is undocumented/internal (see
+		// github/copilot-cli#3551) and not safe to build on yet.
 		derivedStatus = "working";
 	} else {
 		const bindings = status.listByWorkspace(workspace.id);
