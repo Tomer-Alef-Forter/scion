@@ -16,6 +16,8 @@
     "db:generate": "drizzle-kit generate",
     "smoke": "tsx scripts/run-isolated.ts scripts/smoke.ts",
     "daemon-smoke": "tsx scripts/run-isolated.ts scripts/daemon-smoke.ts",
+    "test": "vitest run && bun run --cwd web test",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -36,9 +38,12 @@
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "22.10.2",
     "@types/react": "18.3.18",
+    "@vitest/coverage-v8": "^4",
     "drizzle-kit": "0.31.8",
+    "jsdom": "^27",
     "tsx": "4.19.2",
-    "typescript": "5.7.2"
+    "typescript": "5.7.2",
+    "vitest": "^4"
   },
   "trustedDependencies": ["better-sqlite3", "esbuild", "node-pty"]
 }

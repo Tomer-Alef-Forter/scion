@@ -50,6 +50,28 @@ Full usage: [User Guide](docs/USER_GUIDE.md) (terminal UI) ·
 Agent status: `working` (turn running) · `waiting` (needs input) · `review`
 (turn finished, unseen) · `idle` · `starting` · `done`.
 
+## Testing
+
+Unit tests ([Vitest](https://vitest.dev)) cover pure logic — argv building,
+branch/slug naming, the path-traversal guard on the file browser, the daemon's
+binary frame protocol, and the web terminal's WebSocket reconnect/backoff:
+
+```bash
+bun run test        # runs both suites below (root + web)
+bun run test:watch  # root suite only, in watch mode
+```
+
+Under the hood this is two separate Vitest configs, since `web/` is its own
+package with its own dependencies: `vitest.config.ts` (Node environment, for
+`src/**/*.test.ts`) and `web/vitest.config.ts` (jsdom, for
+`web/src/**/*.test.ts`, run via `bun run --cwd web test`).
+
+These are hermetic and sub-second — no real PTY, CLI process, or network
+socket involved (WebSockets are faked, timers are mocked). For end-to-end
+coverage of the parts that do spawn real processes (the hook→status pipeline,
+the web UI, the daemon), see the manual smoke scripts instead:
+`bun run smoke`, `bun run web:smoke`, `bun run daemon-smoke`.
+
 ## What it doesn't do
 
 PTYs don't survive an app restart (no background daemon); no PR review, cloud
