@@ -56,7 +56,8 @@ the next `bun start` / `bun run web` reinstalls cleanly if you run it again
 later.
 
 Full usage: [User Guide](docs/USER_GUIDE.md) (terminal UI) ·
-[Web Guide](docs/WEB_GUIDE.md) (web UI).
+[Web Guide](docs/WEB_GUIDE.md) (web UI) ·
+[Restarting](docs/RESTARTING.md) (picking up code changes; crash-survivable mode).
 
 Agent status: `working` (turn running) · `waiting` (needs input) · `review`
 (turn finished, unseen) · `idle` · `starting` · `done`.
