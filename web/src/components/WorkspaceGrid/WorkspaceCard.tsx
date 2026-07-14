@@ -4,6 +4,7 @@
 import { memo } from "react";
 import { StatusIndicator } from "../StatusIndicator/StatusIndicator";
 import type { DiffSummary, SessionUsage, WorkspaceWithStatus } from "../../lib/api";
+import { estimateCostUsd, formatCostUsd } from "../../lib/pricing";
 import { cn } from "../../lib/utils";
 
 const MINUTE_MS = 60_000;
@@ -27,16 +28,21 @@ function formatTokenCount(n: number): string {
 	return `${n}`;
 }
 
-/** "656.9k tokens · 474 turns" — cumulative input+output tokens for the
- * session, real numbers read from Claude Code's own transcript (see
- * engine/usage.ts). Returns null until at least one turn has completed (the
- * caller falls back to the branch name). No cost shown: there is no cost/price
- * field anywhere in the source data (see docs/WEB_GUIDE.md §12) — we don't
- * estimate one. */
+/** "~$1.23 est. · 656.9k tokens · 474 turns" — cumulative usage for the session.
+ * Tokens are real numbers from Claude Code's own transcript (see
+ * engine/usage.ts); the dollar figure is an ESTIMATE from a per-model price
+ * table (see lib/pricing.ts), so it's labelled "est." — the transcript carries
+ * no real cost. Returns null until at least one turn has completed (the caller
+ * falls back to the branch name). */
 function tokenSummary(usage: SessionUsage | null): string | null {
 	if (!usage || usage.turnCount === 0) return null;
 	const total = usage.totalInputTokens + usage.totalOutputTokens;
-	return `${formatTokenCount(total)} tokens · ${usage.turnCount} turns`;
+	const parts: string[] = [];
+	const cost = estimateCostUsd(usage);
+	if (cost !== null) parts.push(`${formatCostUsd(cost)} est.`);
+	parts.push(`${formatTokenCount(total)} tokens`);
+	parts.push(`${usage.turnCount} turns`);
+	return parts.join(" · ");
 }
 
 /** " · +12 -3 · 2 uncommitted" — nothing at all if the worktree is clean. */

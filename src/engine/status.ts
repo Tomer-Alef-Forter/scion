@@ -108,6 +108,9 @@ export interface SessionUsage {
 	totalCacheReadTokens: number;
 	turnCount: number;
 	usageUpdatedAt: number | null;
+	/** Model id behind the counts (e.g. "claude-sonnet-5"); the UI uses it to
+	 * pick the price-table row for the cost estimate. Null if unknown. */
+	model: string | null;
 }
 
 export interface StatusStore {
@@ -172,6 +175,7 @@ export function createStatusStore(db: Db): StatusStore {
 					totalCacheReadTokens: usage.cacheReadTokens,
 					turnCount: usage.turnCount,
 					usageUpdatedAt: now,
+					usageModel: usage.model,
 				}
 			: {};
 
@@ -256,6 +260,7 @@ export function createStatusStore(db: Db): StatusStore {
 						totalCacheReadTokens: row.totalCacheReadTokens,
 						turnCount: row.turnCount,
 						usageUpdatedAt: row.usageUpdatedAt,
+						model: row.usageModel,
 					},
 				};
 			});

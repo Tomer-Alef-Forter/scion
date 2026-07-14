@@ -11,10 +11,12 @@
 // output_tokens, cache_creation_input_tokens, cache_read_input_tokens) — real
 // numbers Claude Code itself recorded, not an estimate.
 //
-// There is no cost/price field anywhere in the transcript. Turning tokens
-// into a dollar figure would require Scion to hardcode a per-model price
-// table (and keep it in sync with pricing/plan changes forever), so we
-// deliberately don't compute or display a cost — see docs/WEB_GUIDE.md §12.
+// There is no cost/price field anywhere in the transcript — only token counts
+// and the model that produced each message. To show a dollar figure we capture
+// the model here and let the web UI apply a per-model price table (see
+// web/src/lib/pricing.ts): keeping the rates on the client means updating them
+// is a UI change, not a daemon restart, and the displayed number is clearly an
+// estimate — Claude Code's own authoritative cost is not exposed to us.
 import { readFileSync, statSync } from "node:fs";
 
 export interface UsageTotals {
@@ -26,6 +28,11 @@ export interface UsageTotals {
 	 * one user prompt can still produce several of these across a tool-use
 	 * loop, so treat this as relative, not exact. */
 	turnCount: number;
+	/** Model id from the most recent usage-bearing assistant message (e.g.
+	 * "claude-sonnet-5"). Drives the cost estimate in the UI; null if the
+	 * transcript never named one. A session is effectively single-model, so
+	 * one id is a fair basis for the whole session's estimate. */
+	model: string | null;
 }
 
 // Recomputing usage means re-reading the whole transcript on every Stop
@@ -44,7 +51,7 @@ interface TranscriptUsageBlock {
 interface TranscriptLine {
 	type?: string;
 	isSidechain?: boolean;
-	message?: { usage?: TranscriptUsageBlock };
+	message?: { usage?: TranscriptUsageBlock; model?: string };
 }
 
 /**
@@ -77,6 +84,7 @@ export function parseTranscriptUsage(transcriptPath: string): UsageTotals | null
 		cacheCreationTokens: 0,
 		cacheReadTokens: 0,
 		turnCount: 0,
+		model: null,
 	};
 
 	for (const line of raw.split("\n")) {
@@ -96,6 +104,7 @@ export function parseTranscriptUsage(transcriptPath: string): UsageTotals | null
 		totals.cacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
 		totals.cacheReadTokens += usage.cache_read_input_tokens ?? 0;
 		totals.turnCount += 1;
+		if (entry.message?.model) totals.model = entry.message.model;
 	}
 
 	return totals;

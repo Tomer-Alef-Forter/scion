@@ -88,11 +88,10 @@ export const terminalAgentBindings = sqliteTable(
 		// Cumulative token usage for this session, recomputed from Claude Code's
 		// own transcript file (see engine/usage.ts) each time a "Stop" hook
 		// fires. Real numbers straight from the transcript's per-message
-		// `usage` blocks — NOT estimated. There is deliberately no cost column:
-		// hook payloads and the transcript carry no price/cost field at all (we
-		// checked), and turning token counts into a dollar figure would mean
-		// hardcoding a per-model price table here that Scion can't keep in sync
-		// with reality — so we surface tokens only. See docs/WEB_GUIDE.md §12.
+		// `usage` blocks. The transcript carries no cost field — the dollar
+		// figure the UI shows is an ESTIMATE, computed on the client from these
+		// tokens and `usageModel` via a per-model price table
+		// (web/src/lib/pricing.ts). See docs/WEB_GUIDE.md §12.
 		totalInputTokens: integer("total_input_tokens").notNull().default(0),
 		totalOutputTokens: integer("total_output_tokens").notNull().default(0),
 		totalCacheCreationTokens: integer("total_cache_creation_tokens")
@@ -104,6 +103,9 @@ export const terminalAgentBindings = sqliteTable(
 		// round-trip).
 		turnCount: integer("turn_count").notNull().default(0),
 		usageUpdatedAt: integer("usage_updated_at"),
+		// Model id from the transcript's most recent assistant message (e.g.
+		// "claude-sonnet-5"); the UI picks the price-table row from this.
+		usageModel: text("usage_model"),
 	},
 	(table) => [
 		index("terminal_agent_bindings_workspace_id_idx").on(table.workspaceId),

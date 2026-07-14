@@ -31,6 +31,7 @@ export interface SessionUsage {
 	totalCacheReadTokens: number;
 	turnCount: number;
 	usageUpdatedAt: number | null;
+	model: string | null;
 }
 
 export type AgentStatus = "working" | "waiting" | "review" | "idle" | "starting" | "done";

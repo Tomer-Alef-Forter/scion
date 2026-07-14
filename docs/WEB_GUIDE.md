@@ -290,11 +290,12 @@ restriction here.
 
 ---
 
-## 12. Token usage (and why there's no cost)
+## 12. Token usage and estimated cost
 
-Each workspace card shows a running **token count** (e.g. `12.3k tokens`)
-once its Claude Code agent has completed at least one turn — the sum of
-input + output tokens for the session so far.
+Each workspace card shows running usage (e.g. `~$1.23 est. · 656.9k tokens ·
+474 turns`) once its Claude Code agent has completed at least one turn — the
+estimated cost, the sum of input + output tokens, and the turn count for the
+session so far.
 
 Where this comes from: Claude Code's lifecycle hooks (`Stop`, `SessionEnd`,
 ...) do **not** include token counts, cost, or turn counts in their JSON
@@ -309,18 +310,22 @@ re-reads that file and re-sums those fields (see `src/engine/usage.ts`),
 so the count shown is always a real, current total straight from Claude
 Code's own record of the session — never an estimate.
 
-**There is deliberately no cost/$ figure anywhere in Scion.** No cost or
-price field exists in the hook payload or the transcript to read a real
-number from, and computing one would mean hardcoding a per-model price table
-that would drift out of sync with actual pricing/plans — so rather than show
-a number that might be wrong, Scion shows only the token counts it can
-verify are real. This is entirely local bookkeeping against your own
-`~/.claude` transcripts; nothing is ever sent to Anthropic's usage API or
-any other external service.
+**The `$` figure is an estimate, not a bill — hence the `~…est.` label.** No
+cost field exists in the hook payload or the transcript, and Claude Code's own
+authoritative cost is never exposed to Scion. So Scion estimates it: the model
+that produced the session (also read from the transcript) picks a row in a
+hardcoded per-model price table (`web/src/lib/pricing.ts`), and the token
+counts above are multiplied by those rates — cache reads at 0.1× the input rate
+and cache writes at 1.25×, matching Anthropic's published cache pricing. That
+table is maintained by hand and **will drift** as pricing changes (it already
+encodes Sonnet 5's intro-pricing expiry on 2026-08-31); treat the number as a
+ballpark. Keeping the table on the client means updating a rate is a UI change,
+not a restart. This is entirely local bookkeeping against your own `~/.claude`
+transcripts; nothing is ever sent to Anthropic's usage API or any other
+external service.
 
 Only Claude Code workspaces get this — other agents (Gemini CLI, Codex, ...)
-don't write a compatible transcript format, so their cards show no token
-count.
+don't write a compatible transcript format, so their cards show no usage.
 
 ---
 
