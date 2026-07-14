@@ -27,7 +27,7 @@ import { inProcessPtyBackend } from "../src/engine/ptyBackend.ts";
 import { createStatusStore } from "../src/engine/status.ts";
 import { addWorktree, removeWorktree } from "../src/engine/worktrees.ts";
 import { startHookServer } from "../src/hookServer.ts";
-import { installClaudeHooks } from "../src/setup/installClaudeHooks.ts";
+import { installClaudeHooks, uninstallClaudeHooks } from "../src/setup/installClaudeHooks.ts";
 import { createStore } from "../src/store/projects.ts";
 
 // This script does real filesystem writes/deletes under config.ts's
@@ -444,6 +444,48 @@ async function main() {
 		check(
 			"installClaudeHooks: re-running still preserves the user's hook",
 			stopCommandsAfterReinstall.includes("echo user-configured-hook"),
+		);
+
+		// ---- uninstallClaudeHooks: removes exactly our own entries, leaves the
+		// user's hook and notify.sh's install untouched otherwise ----
+
+		uninstallClaudeHooks();
+		const afterUninstall = JSON.parse(readFileSync(claudeSettingsPath, "utf-8"));
+		const stopCommandsAfterUninstall: string[] = (afterUninstall.hooks?.Stop ?? []).flatMap(
+			(d: { hooks?: Array<{ command: string }> }) => d.hooks?.map((h) => h.command) ?? [],
+		);
+		check(
+			"uninstallClaudeHooks: removes our managed hook",
+			!stopCommandsAfterUninstall.some((c) => c.includes("hooks/notify.sh")),
+		);
+		check(
+			"uninstallClaudeHooks: preserves the user's own hook",
+			stopCommandsAfterUninstall.includes("echo user-configured-hook"),
+		);
+		check(
+			"uninstallClaudeHooks: only our other managed events are gone (no empty leftovers)",
+			afterUninstall.hooks.SessionStart === undefined &&
+				afterUninstall.hooks.PostToolUse === undefined,
+		);
+		check("uninstallClaudeHooks: deletes notify.sh", !existsSync(NOTIFY_SCRIPT_PATH));
+
+		uninstallClaudeHooks(); // run again on an already-clean state — must not throw
+		const afterSecondUninstall = JSON.parse(readFileSync(claudeSettingsPath, "utf-8"));
+		check(
+			"uninstallClaudeHooks: idempotent — re-running on a clean settings.json is a no-op",
+			JSON.stringify(afterSecondUninstall) === JSON.stringify(afterUninstall),
+		);
+
+		installClaudeHooks(); // must reinstall cleanly after an uninstall
+		const afterReinstallPostUninstall = JSON.parse(readFileSync(claudeSettingsPath, "utf-8"));
+		const stopCommandsAfterReinstall2: string[] = afterReinstallPostUninstall.hooks.Stop.flatMap(
+			(d: { hooks?: Array<{ command: string }> }) => d.hooks?.map((h) => h.command) ?? [],
+		);
+		check(
+			"installClaudeHooks: reinstalls cleanly after an uninstall",
+			stopCommandsAfterReinstall2.some((c) => c.includes("hooks/notify.sh")) &&
+				stopCommandsAfterReinstall2.includes("echo user-configured-hook") &&
+				existsSync(NOTIFY_SCRIPT_PATH),
 		);
 
 		// ---- host settings: default agent is captured onto the workspace ----
