@@ -43,6 +43,16 @@ is spawned inside it → as the agent works, its hooks POST events to a localhos
 receiver → status lands in SQLite → the dashboard lights up → you press `m` to
 merge the branch back.
 
+> Simplified: the PTY box above is actually owned by a small background
+> daemon (auto-spawned the first time it's needed), not by the TUI process
+> itself — so quitting or restarting the TUI never kills a running agent; you
+> reattach to the same live session next time. The one thing that *does* end
+> a live agent is the daemon itself crashing (rare, single-purpose process) —
+> the worktree, branch, and DB state all survive that regardless. See
+> [USER_GUIDE.md §10](./USER_GUIDE.md#10-limitations). There's also a second,
+> optional front end — a web UI — that's a client of the exact same daemon +
+> `host.db`; see [WEB_GUIDE.md](./WEB_GUIDE.md).
+
 ---
 
 ## 2. Screen map
@@ -253,7 +263,10 @@ Key safety properties, straight from the code:
 - **Uncommitted changes → merge is refused** (nothing partial gets merged).
 - **Conflict → merge is aborted and your previous branch is restored** — the
   main checkout is never left in a conflicted state.
-- Merge is **local only** — it does not touch a PR.
+- Merge (`m`) is **local only** — it does not push or touch a PR. The web UI
+  has a separate **Create PR** action (push + `gh pr create`) that this
+  terminal UI has no equivalent for; see
+  [WEB_GUIDE.md §8](./WEB_GUIDE.md#8-merging-back-or-opening-a-pr).
 
 ---
 

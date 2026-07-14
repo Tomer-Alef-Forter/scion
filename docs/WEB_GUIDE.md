@@ -110,9 +110,10 @@ directly into it. Resize the browser window and the PTY resizes too.
 Reconnects automatically (with backoff) if the connection drops, and replays
 scrollback so you don't lose context.
 
-Header buttons above the tabs: **Merge** (into base branch), **Open** (in
-whichever editor is set as default in Settings), **Delete** (remove the
-worktree, keep the branch).
+Header buttons above the tabs: **Merge** (`m`, into base branch), **Open**
+(`o`, in whichever editor is set as default in Settings), **Create PR** (`p`,
+push the branch and open a GitHub PR via `gh` — see §8), **Delete** (`x`,
+remove the worktree, keep the branch).
 
 ### 4.4 Detail panel — Diff tab
 
@@ -134,10 +135,13 @@ it. This covers *every* file in the worktree, not just changed ones — so
 Gear icon in the sidebar header opens a global preferences modal:
 
 - **Agent** — which CLI new workspaces launch: **Claude Code**, **Gemini
-  CLI**, or **Codex**. Only Claude Code reports live status via its
-  lifecycle hooks (§6) — the other two have no equivalent, so their
+  CLI**, **Codex**, **Cursor Agent**, **Droid**, **OpenCode**, or **GitHub
+  Copilot** (7 presets). Only Claude Code reports live status via its
+  lifecycle hooks (§6) — the other six have no equivalent, so their
   workspaces just show **working** for the life of the session instead of
-  distinguishing working/waiting/review.
+  distinguishing working/waiting/review. This setting is shared with the
+  terminal UI (same `~/.scion/host.db`), but the terminal UI has no screen to
+  change it — it always launches whatever's set here.
 - **Editor** — what **Open** launches: **VS Code**, **Cursor**, or **Zed**.
 
 These are defaults for *new* workspaces only — each workspace keeps
@@ -192,13 +196,23 @@ Claude `session_id` was captured from the lifecycle hook, it's passed via
 
 ---
 
-## 8. Merging back
+## 8. Merging back, or opening a PR
 
-Same semantics as the terminal UI's `m` key: merges the workspace branch into
-its base branch in your **main repo checkout**, refuses if the worktree has
-uncommitted changes, and on conflict aborts the merge and restores your
-previous branch — the main checkout is never left in a conflicted state.
-Merge is **local only** (no PR).
+**Merge** has the same semantics as the terminal UI's `m` key: merges the
+workspace branch into its base branch in your **main repo checkout**, refuses
+if the worktree has uncommitted changes, and on conflict aborts the merge and
+restores your previous branch — the main checkout is never left in a
+conflicted state. Merge is **local only** — it never pushes or touches
+GitHub.
+
+**Create PR** (`p`) is the alternative for pushing your work out: it runs
+`git push -u origin <branch>` then `gh pr create --fill`, and shows you the
+resulting URL. If a PR for that branch already exists (e.g. you clicked it
+again after pushing more commits), it falls back to that PR's URL instead of
+erroring. This is PR *creation* only — there's no in-app PR review (no diff
+comments, no approve/merge-from-PR); once opened, review it on GitHub as
+usual. Requires the `gh` CLI to be installed and authenticated. This action
+only exists in the web UI — the terminal UI has no equivalent.
 
 ---
 
@@ -213,13 +227,15 @@ worktrees.
 
 ## 10. Limitations (vs the terminal UI)
 
-- Everything in the terminal UI's
-  [Limitations](./USER_GUIDE.md#10-limitations) applies here
-  too (no PTY persistence across a restart, no PR review, no cloud sync, no
-  multi-agent presets).
-- **One front end at a time** — see the callout in §3.
+- Everything in the terminal UI's [Limitations](./USER_GUIDE.md#10-limitations)
+  applies here too: a crash of the PTY daemon itself still ends every live
+  agent (restarting a front end does not, per §3/§7); no cloud sync; and no
+  in-app PR review (only PR *creation*, and only from here — see §8).
 - The file browser is **read-only** — editing is the agent's job.
 - No mobile/responsive layout; built for a desktop browser window.
+
+Both front ends run at once fine (§3) — there's no "one at a time"
+restriction here.
 
 ---
 
