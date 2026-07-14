@@ -15,7 +15,7 @@ import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import * as net from "node:net";
 import { join } from "node:path";
-import { DAEMON_LOG, DAEMON_SOCK, DATA_DIR } from "../config.ts";
+import { DAEMON_LOG, DAEMON_SOCK, DATA_DIR, PTY_HOST_LOG, PTY_HOST_SOCK } from "../config.ts";
 import {
 	type AttachClientMessage,
 	type AttachServerMessage,
@@ -156,9 +156,9 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function tryConnectOnce(): Promise<net.Socket> {
+function tryConnectOnce(sockPath: string): Promise<net.Socket> {
 	return new Promise((resolve, reject) => {
-		const socket = net.createConnection(DAEMON_SOCK);
+		const socket = net.createConnection(sockPath);
 		const onConnect = () => {
 			socket.off("error", onError);
 			resolve(socket);
@@ -191,22 +191,51 @@ function spawnDaemonDetached(): void {
 	}
 }
 
-/** Connect to the daemon's control/attach socket, spawning it if not already running. */
-async function connectToDaemon(): Promise<net.Socket> {
+/**
+ * A socket-backed backend's connection parameters. `ensureServer` is called
+ * once if the first connect attempt fails, to lazily start the owning process
+ * (the daemon, for the DAEMON_SOCK backend). It's OMITTED for the PTY-host
+ * client backend: the supervisor owns that process's lifecycle, so the daemon
+ * must never try to spawn one itself — it just retry-connects while the host
+ * is still binding (or has briefly gone away).
+ */
+interface SocketBackendConfig {
+	sockPath: string;
+	logPath: string;
+	label: string;
+	ensureServer?: () => void;
+}
+
+const DAEMON_BACKEND: SocketBackendConfig = {
+	sockPath: DAEMON_SOCK,
+	logPath: DAEMON_LOG,
+	label: "scion-daemon",
+	ensureServer: spawnDaemonDetached,
+};
+
+const PTY_HOST_BACKEND: SocketBackendConfig = {
+	sockPath: PTY_HOST_SOCK,
+	logPath: PTY_HOST_LOG,
+	label: "scion-pty-host",
+	// No ensureServer: the supervisor owns the PTY host.
+};
+
+/** Connect to a control/attach socket, spawning its owner if configured to. */
+async function connectToSocket(cfg: SocketBackendConfig): Promise<net.Socket> {
 	try {
-		return await tryConnectOnce();
+		return await tryConnectOnce(cfg.sockPath);
 	} catch {
-		// No daemon listening yet — spawn one and poll until it's ready.
+		// Not listening yet — spawn the owner (if we may) and poll until ready.
 	}
-	spawnDaemonDetached();
+	cfg.ensureServer?.();
 	const deadline = Date.now() + CONNECT_TIMEOUT_MS;
 	for (;;) {
 		try {
-			return await tryConnectOnce();
+			return await tryConnectOnce(cfg.sockPath);
 		} catch (err) {
 			if (Date.now() > deadline) {
 				throw new Error(
-					`scion-daemon did not become ready in time (check ${DAEMON_LOG}): ${String(err)}`,
+					`${cfg.label} did not become ready in time (check ${cfg.logPath}): ${String(err)}`,
 				);
 			}
 			await sleep(POLL_INTERVAL_MS);
@@ -228,11 +257,13 @@ class ControlClient {
 	private pending = new Map<number, PendingRequest>();
 	private statusListeners = new Set<(workspaceId: string) => void>();
 
+	constructor(private readonly cfg: SocketBackendConfig) {}
+
 	private async ensureConnected(): Promise<net.Socket> {
 		if (this.socket && !this.socket.destroyed) return this.socket;
 		if (this.connecting) return this.connecting;
 		this.connecting = (async () => {
-			const socket = await connectToDaemon();
+			const socket = await connectToSocket(this.cfg);
 			socket.on("data", (chunk) => this.decoder.push(chunk, (frame) => this.handleFrame(frame)));
 			socket.on("close", () => {
 				this.socket = null;
@@ -288,10 +319,11 @@ class ControlClient {
 }
 
 async function daemonAttach(
+	cfg: SocketBackendConfig,
 	terminalId: string,
 	opts: { skipReplay?: boolean } = {},
 ): Promise<AttachHandle | null> {
-	const socket = await connectToDaemon();
+	const socket = await connectToSocket(cfg);
 	const decoder = new FrameDecoder();
 	const dataListeners = new Set<(chunk: string) => void>();
 	const exitListeners = new Set<(code: number) => void>();
@@ -348,9 +380,9 @@ async function daemonAttach(
 	};
 }
 
-/** Builds a fresh daemon-backed PtyBackend — call once per front-end process. */
-export function createDaemonPtyBackend(): PtyBackend {
-	const control = new ControlClient();
+/** Builds a fresh socket-backed PtyBackend against the given control socket. */
+function createSocketPtyBackend(cfg: SocketBackendConfig): PtyBackend {
+	const control = new ControlClient(cfg);
 
 	return {
 		async spawnSession(args) {
@@ -371,7 +403,7 @@ export function createDaemonPtyBackend(): PtyBackend {
 		},
 
 		attach(terminalId, opts) {
-			return daemonAttach(terminalId, opts);
+			return daemonAttach(cfg, terminalId, opts);
 		},
 
 		onStatusChanged(fn) {
@@ -383,4 +415,20 @@ export function createDaemonPtyBackend(): PtyBackend {
 			if (!result.ok) throw new Error(result.error ?? "shutdown failed");
 		},
 	};
+}
+
+/** Builds a fresh daemon-backed PtyBackend — call once per front-end process. */
+export function createDaemonPtyBackend(): PtyBackend {
+	return createSocketPtyBackend(DAEMON_BACKEND);
+}
+
+/**
+ * Builds a PtyBackend that proxies to the durable PTY host (PTY_HOST_SOCK)
+ * instead of owning node-pty sessions in this process. Used by the daemon ONLY
+ * when the supervisor launched it with SCION_PTY_HOST_SOCK set — so a daemon
+ * crash leaves the real PTY master fds (owned by the host) open and the agents
+ * running. Never auto-spawns: the supervisor owns the host's lifecycle.
+ */
+export function createPtyHostClientBackend(): PtyBackend {
+	return createSocketPtyBackend(PTY_HOST_BACKEND);
 }

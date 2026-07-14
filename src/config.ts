@@ -25,8 +25,27 @@ export const WEB_PORT = 5177;
  * DATA_DIR so isolated test runs (a different DATA_DIR) get their own daemon
  * instead of colliding with a real one.
  */
-export const DAEMON_SOCK = join(
-	tmpdir(),
-	`scion-${createHash("sha256").update(DATA_DIR).digest("hex").slice(0, 12)}.sock`,
-);
+const SOCK_KEY = createHash("sha256").update(DATA_DIR).digest("hex").slice(0, 12);
+export const DAEMON_SOCK = join(tmpdir(), `scion-${SOCK_KEY}.sock`);
 export const DAEMON_LOG = join(DATA_DIR, "daemon.log");
+
+/**
+ * Unix domain socket for the (opt-in) durable PTY host — a second, separate
+ * process that actually owns the node-pty sessions so the front-end-facing
+ * daemon can crash and respawn WITHOUT closing the PTY master fds (and thus
+ * WITHOUT SIGHUP-ing the agents). Same tmpdir/`sun_path`-length reasoning as
+ * DAEMON_SOCK, keyed off DATA_DIR so isolated test runs don't collide. Only
+ * used when the supervisor (src/daemon/supervisor.ts) is running; the default
+ * single-process path never touches it.
+ */
+export const PTY_HOST_SOCK = join(tmpdir(), `scion-ptyhost-${SOCK_KEY}.sock`);
+export const PTY_HOST_LOG = join(DATA_DIR, "pty-host.log");
+export const SUPERVISOR_LOG = join(DATA_DIR, "supervisor.log");
+
+/**
+ * Env var the supervisor sets on the daemon it spawns. Its presence is what
+ * flips the daemon from owning PTYs in-process to proxying them to the durable
+ * PTY host over PTY_HOST_SOCK. Unset in every default/standalone invocation, so
+ * the normal single-process behavior is completely unchanged.
+ */
+export const PTY_HOST_SOCK_ENV = "SCION_PTY_HOST_SOCK";

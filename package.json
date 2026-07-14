@@ -16,6 +16,7 @@
     "db:generate": "drizzle-kit generate",
     "smoke": "tsx scripts/run-isolated.ts scripts/smoke.ts",
     "daemon-smoke": "tsx scripts/run-isolated.ts scripts/daemon-smoke.ts",
+    "persistence-smoke": "tsx scripts/run-isolated.ts scripts/persistence-smoke.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
