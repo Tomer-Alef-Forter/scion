@@ -2,29 +2,52 @@
 // Merges our hook commands into ~/.claude/settings.json without clobbering
 // any hooks the user already has configured there, and writes
 // ~/.scion/hooks/notify.sh (see notify.sh for what it does at runtime).
+//
+// This is global (~/.claude/settings.json applies to every Claude Code
+// session on the machine, not just Scion-launched ones), so every installed
+// command is a no-op outside a Scion session (gated on $SCION_HOME_DIR — see
+// notify.sh) and is tagged with MANAGED_MARKER below so it's identifiable at
+// a glance and so `uninstallClaudeHooks` can remove exactly what we added,
+// nothing the user configured independently. Run `bun run uninstall-hooks`
+// to remove it.
 import {
 	chmodSync,
 	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HOOKS_DIR, NOTIFY_SCRIPT_PATH } from "../config.ts";
+import { HOOKS_DIR, INSTALLED_MARKER, NOTIFY_SCRIPT_PATH } from "../config.ts";
 
 const CLAUDE_SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
 const NOTIFY_TEMPLATE = fileURLToPath(new URL("./notify.sh", import.meta.url));
 
+/**
+ * A comment prepended to every command we install, purely so a human (or
+ * `withoutManagedHooks`) can identify a Scion-managed hook entry at a glance
+ * inside ~/.claude/settings.json. It's inert shell — Claude runs the command
+ * via a shell that treats a leading `#…` line as a comment — and doubles as
+ * the marker uninstall matches on, which is more specific than grepping for
+ * the notify.sh path (a user could plausibly reference that path themselves).
+ */
+const MANAGED_MARKER =
+	"# scion-managed hook (no-op outside a Scion session; remove via: bun run uninstall-hooks)";
+
 /** The shell command Claude actually runs for each managed hook event. */
 function managedHookCommand(): string {
-	return `[ -n "$SCION_HOME_DIR" ] && [ -x "$SCION_HOME_DIR/hooks/notify.sh" ] && SCION_AGENT_ID=claude "$SCION_HOME_DIR/hooks/notify.sh" || true`;
+	return [
+		MANAGED_MARKER,
+		`[ -n "$SCION_HOME_DIR" ] && [ -x "$SCION_HOME_DIR/hooks/notify.sh" ] && SCION_AGENT_ID=claude "$SCION_HOME_DIR/hooks/notify.sh" || true`,
+	].join("\n");
 }
 
 function isManagedCommand(command: string | undefined): boolean {
-	return !!command && command.includes("hooks/notify.sh");
+	return !!command && command.includes(MANAGED_MARKER);
 }
 
 interface HookConfig {
@@ -123,4 +146,45 @@ export function installClaudeSettings(): void {
 export function installClaudeHooks(): void {
 	installNotifyScript();
 	installClaudeSettings();
+}
+
+/** Delete ~/.scion/hooks/notify.sh, if present. Safe to call when absent. */
+export function uninstallNotifyScript(): void {
+	if (existsSync(NOTIFY_SCRIPT_PATH)) rmSync(NOTIFY_SCRIPT_PATH);
+}
+
+/**
+ * Remove exactly the hook entries `installClaudeSettings` added from
+ * ~/.claude/settings.json, leaving everything else (including hooks the user
+ * configured independently, even ones that reuse an event name we manage)
+ * untouched. Safe/idempotent: a missing file, an already-clean file, or an
+ * unparsable file are all no-ops rather than errors.
+ */
+export function uninstallClaudeSettings(): void {
+	const settings = readExistingSettings();
+	if (settings === null || !isObj(settings.hooks)) return;
+
+	for (const [eventName, defs] of Object.entries(settings.hooks)) {
+		if (!Array.isArray(defs)) continue;
+		const survivors = withoutManagedHooks(defs);
+		if (survivors.length === 0) delete settings.hooks[eventName];
+		else settings.hooks[eventName] = survivors;
+	}
+	if (Object.keys(settings.hooks).length === 0) delete settings.hooks;
+
+	writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 2), {
+		mode: 0o644,
+	});
+}
+
+/**
+ * Full uninstall: strips our hook entries from ~/.claude/settings.json,
+ * deletes ~/.scion/hooks/notify.sh, and clears the "already installed"
+ * marker so the next `bun start` / `bun run web` reinstalls cleanly instead
+ * of silently staying uninstalled.
+ */
+export function uninstallClaudeHooks(): void {
+	uninstallClaudeSettings();
+	uninstallNotifyScript();
+	if (existsSync(INSTALLED_MARKER)) rmSync(INSTALLED_MARKER);
 }

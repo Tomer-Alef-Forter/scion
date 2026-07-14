@@ -43,6 +43,16 @@ bun run web            # web UI, production   — builds once, serves everything
 First run (either front end) installs Claude Code lifecycle hooks into
 `~/.claude/settings.json` (merged, not clobbered) and writes
 `~/.scion/hooks/notify.sh`, so the dashboard can show live agent status.
+These hooks are installed globally — `~/.claude/settings.json` applies to
+every Claude Code session on the machine — but each installed command is a
+no-op unless it's running inside a Scion-launched session, and is tagged
+with a `# scion-managed hook` comment so it's identifiable at a glance.
+
+To remove them: `bun run uninstall-hooks`. This deletes exactly the hook
+entries Scion added (leaving any hooks you configured yourself untouched)
+and removes `~/.scion/hooks/notify.sh`. It's safe to run more than once, and
+the next `bun start` / `bun run web` reinstalls cleanly if you run it again
+later.
 
 Full usage: [User Guide](docs/USER_GUIDE.md) (terminal UI) ·
 [Web Guide](docs/WEB_GUIDE.md) (web UI).
