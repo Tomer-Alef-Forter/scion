@@ -27,20 +27,16 @@ function formatTokenCount(n: number): string {
 	return `${n}`;
 }
 
-/** " · 12.3k tokens" — cumulative input+output tokens for the session, real
- * numbers read from Claude Code's own transcript (see engine/usage.ts).
- * Nothing shown until at least one turn has completed. No cost shown: there
- * is no cost/price field anywhere in the source data (see
- * docs/WEB_GUIDE.md §12) — we don't estimate one. */
-function TokenStats({ usage }: { usage: SessionUsage | null }) {
+/** "656.9k tokens · 474 turns" — cumulative input+output tokens for the
+ * session, real numbers read from Claude Code's own transcript (see
+ * engine/usage.ts). Returns null until at least one turn has completed (the
+ * caller falls back to the branch name). No cost shown: there is no cost/price
+ * field anywhere in the source data (see docs/WEB_GUIDE.md §12) — we don't
+ * estimate one. */
+function tokenSummary(usage: SessionUsage | null): string | null {
 	if (!usage || usage.turnCount === 0) return null;
 	const total = usage.totalInputTokens + usage.totalOutputTokens;
-	return (
-		<>
-			{" · "}
-			{formatTokenCount(total)} tokens
-		</>
-	);
+	return `${formatTokenCount(total)} tokens · ${usage.turnCount} turns`;
 }
 
 /** " · +12 -3 · 2 uncommitted" — nothing at all if the worktree is clean. */
@@ -90,9 +86,8 @@ function WorkspaceCardImpl({
 					<span className="truncate text-sm font-medium">{workspace.name}</span>
 				</div>
 				<span className="truncate pl-4 text-xs text-muted-foreground">
-					{workspace.branch}
+					{tokenSummary(workspace.usage) ?? workspace.branch}
 					<DiffStats diff={workspace.diff} />
-					<TokenStats usage={workspace.usage} />
 					{!workspace.terminalId && " · click to resume"}
 				</span>
 			</div>

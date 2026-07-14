@@ -11,7 +11,6 @@ import {
 	NewWorkspaceModal,
 } from "./components/NewWorkspaceModal/NewWorkspaceModal";
 import { PrStatusBadge } from "./components/PrStatus/PrStatusBadge";
-import { TokenUsageBadge } from "./components/TokenUsage/TokenUsageBadge";
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal";
 import { type WebTerminalHandle, WebTerminal } from "./components/WebTerminal";
@@ -740,8 +739,8 @@ export function App() {
 										<div className="truncate text-sm font-medium">
 											{selectedWorkspace.name}
 										</div>
-										<div className="mt-0.5">
-											<TokenUsageBadge usage={selectedWorkspace.usage} />
+										<div className="truncate text-xs text-muted-foreground">
+											{selectedWorkspace.branch}
 										</div>
 										<div className="mt-1">
 											<PrStatusBadge key={selectedWorkspace.id} workspaceId={selectedWorkspace.id} />
