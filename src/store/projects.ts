@@ -192,7 +192,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 				branch,
 			});
 			// Before the agent ever launches — otherwise Claude Code's own
-			// workspace-trust dialog (separate from --dangerously-skip-permissions)
+			// workspace-trust dialog (separate from --permission-mode auto)
 			// would block on stdin the first time this brand-new directory opens.
 			trustWorktree(worktreePath);
 
