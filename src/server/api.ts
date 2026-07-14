@@ -213,6 +213,52 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 		}
 	});
 
+	// Batch fan-out: one prompt across N worktrees at once. Two ways to describe
+	// the set, both reducing to one flat agent-per-workspace list:
+	//   - `agents`: an explicit list of presets — one workspace each (compare how
+	//     different CLIs handle the same task).
+	//   - `count`:  N copies of the current default agent (N independent attempts
+	//     to compare).
+	// Providing both flattens to `agents` repeated `count` times. Results are
+	// reported per-target (succeeded/failed) — a failure mid-batch never leaves a
+	// half-created worktree behind (the store rolls each one back individually).
+	api.post("/projects/:id/workspaces/batch", async (c) => {
+		const projectId = c.req.param("id");
+		if (!store.getProject(projectId)) {
+			return c.json({ error: "Project not found" }, 404);
+		}
+		const body = await c.req.json().catch(() => ({}));
+		const prompt = typeof body.prompt === "string" ? body.prompt : "";
+		const name =
+			typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined;
+
+		const presets: AgentType[] = Array.isArray(body.agents)
+			? body.agents.filter((a: unknown): a is AgentType =>
+					AGENT_TYPES.includes(a as AgentType),
+				)
+			: [];
+		const count =
+			Number.isInteger(body.count) && body.count > 0 ? (body.count as number) : 1;
+		// If no explicit presets, fall back to N copies of the default agent.
+		const base = presets.length > 0 ? presets : [store.getSettings().defaultAgent];
+		const agents = base.flatMap((agent) => Array<AgentType>(count).fill(agent));
+
+		if (agents.length === 0) {
+			return c.json({ error: "Batch requires a count or a non-empty agents list" }, 400);
+		}
+		if (agents.length > 20) {
+			return c.json({ error: "Batch size is capped at 20 workspaces" }, 400);
+		}
+
+		try {
+			const result = await store.createWorkspaces({ projectId, prompt, agents, name });
+			// 201 if anything was created; 400 only if every single target failed.
+			return c.json(result, result.succeeded.length > 0 ? 201 : 400);
+		} catch (err) {
+			return c.json({ error: errMsg(err) }, 400);
+		}
+	});
+
 	// ---- workspace-scoped actions ----
 
 	api.post("/workspaces/:id/resume", async (c) => {

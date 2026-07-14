@@ -66,6 +66,16 @@ export interface CreateWorkspaceResult {
 	setupWarning?: string;
 }
 
+export interface BatchCreateResult {
+	succeeded: Array<{
+		workspace: CreateWorkspaceResult["workspace"];
+		terminalId: string;
+		agentType: AgentType;
+		setupWarning?: string;
+	}>;
+	failed: Array<{ branch: string; agentType: AgentType; error: string }>;
+}
+
 export interface MergeResult {
 	ok: boolean;
 	base: string;
@@ -143,6 +153,19 @@ export const api = {
 		request<CreateWorkspaceResult>(`/projects/${projectId}/workspaces`, {
 			method: "POST",
 			body: JSON.stringify({ prompt, name }),
+		}),
+	// Fan one prompt out across N worktrees at once. Pass an explicit `agents`
+	// list (one workspace per preset) and/or a `count` (that many copies of each
+	// — or of the default agent when no presets are given). Returns which
+	// targets succeeded and which failed; partial success is normal.
+	createWorkspaceBatch: (
+		projectId: string,
+		prompt: string,
+		opts: { agents?: AgentType[]; count?: number; name?: string },
+	) =>
+		request<BatchCreateResult>(`/projects/${projectId}/workspaces/batch`, {
+			method: "POST",
+			body: JSON.stringify({ prompt, ...opts }),
 		}),
 	// Launches a fresh terminal in an EXISTING workspace whose previous one
 	// ended (no new worktree/branch) — resumes the prior Claude conversation
