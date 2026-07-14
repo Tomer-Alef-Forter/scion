@@ -11,6 +11,7 @@ import {
 	NewWorkspaceModal,
 } from "./components/NewWorkspaceModal/NewWorkspaceModal";
 import { PrStatusBadge } from "./components/PrStatus/PrStatusBadge";
+import { TokenUsageBadge } from "./components/TokenUsage/TokenUsageBadge";
 import { ProjectSidebar } from "./components/ProjectSidebar/ProjectSidebar";
 import { SettingsModal } from "./components/SettingsModal/SettingsModal";
 import { type WebTerminalHandle, WebTerminal } from "./components/WebTerminal";
@@ -742,8 +743,9 @@ export function App() {
 										<div className="truncate text-xs text-muted-foreground">
 											{selectedWorkspace.branch}
 										</div>
-										<div className="mt-1">
+										<div className="mt-1 flex flex-wrap items-center gap-2">
 											<PrStatusBadge key={selectedWorkspace.id} workspaceId={selectedWorkspace.id} />
+											<TokenUsageBadge usage={selectedWorkspace.usage} />
 										</div>
 									</div>
 									<div className="flex shrink-0 gap-1.5">
