@@ -43,7 +43,6 @@ export interface WorkspaceWithStatus {
 	branch: string;
 	baseBranch: string | null;
 	name: string;
-	type: "main" | "worktree";
 	agentType: AgentType;
 	createdAt: number;
 	status: AgentStatus;
@@ -59,7 +58,6 @@ export interface CreateWorkspaceResult {
 		branch: string;
 		baseBranch: string | null;
 		name: string;
-		type: "main" | "worktree";
 		agentType: AgentType;
 		createdAt: number;
 	};
