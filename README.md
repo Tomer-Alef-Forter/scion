@@ -3,8 +3,9 @@
 # Scion
 
 A tiny, standalone tool for orchestrating **Claude Code** agents across
-isolated git worktrees. No Docker, Postgres, Electric, Caddy, auth, or
-cloud account. Everything lives under `~/.scion/`.
+isolated git worktrees. No Docker, Postgres, Electric, Caddy, or cloud account.
+Everything lives under `~/.scion/`. The web UI binds to **localhost only** by
+default (see [Security](#security)).
 
 Two front ends over the same engine:
 - A **terminal UI** (`bun start`) — see the [User Guide](docs/USER_GUIDE.md).
@@ -49,6 +50,26 @@ Full usage: [User Guide](docs/USER_GUIDE.md) (terminal UI) ·
 
 Agent status: `working` (turn running) · `waiting` (needs input) · `review`
 (turn finished, unseen) · `idle` · `starting` · `done`.
+
+## Security
+
+The web UI is a full control surface — over it you can spawn agents, drive any
+live agent's terminal, delete workspaces, and read worktree files — and agents
+run auto-approving (the worktree is the safety boundary, not per-action
+prompts). So access is locked down by default:
+
+- **Default — localhost only.** With zero config, both the backend (`5177`) and
+  the Vite dev server (`5173`) bind to `127.0.0.1`. Nobody on your LAN can reach
+  them, and no token is needed (same-machine trust).
+- **LAN/remote access is opt-in and authenticated.** Start with
+  `SCION_HOST=0.0.0.0 bun run web` (or a specific interface IP) to expose it.
+  Scion then generates a shared-secret token at `~/.scion/web-token` (printed on
+  startup) and requires it on every API call and WebSocket — including the
+  terminal socket. Open the UI once as `http://<host>:5177/?token=<token>` to
+  hand the browser the token.
+
+The `Origin`/CORS check is defense-in-depth only, not a security boundary. Full
+details: [Web Guide → Security model](docs/WEB_GUIDE.md#3a-security-model--localhost-by-default).
 
 ## What it doesn't do
 

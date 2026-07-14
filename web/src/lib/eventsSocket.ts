@@ -2,6 +2,8 @@
 // agent's status changes, so the dashboard updates live instead of polling.
 // Simple reconnect-on-close (no backoff tuning needed — this carries no
 // critical byte stream, just a "something changed, go refetch" signal).
+import { withAuthParam } from "./auth";
+
 export interface StatusChangeMessage {
 	type: "status";
 	workspaceId: string;
@@ -17,7 +19,8 @@ export function subscribeToStatusEvents(
 	function connect() {
 		if (disposed) return;
 		const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-		socket = new WebSocket(`${protocol}://${window.location.host}/ws/events`);
+		const url = withAuthParam(new URL(`${protocol}://${window.location.host}/ws/events`));
+		socket = new WebSocket(url.toString());
 		socket.onmessage = (event) => {
 			try {
 				const msg = JSON.parse(String(event.data)) as StatusChangeMessage;

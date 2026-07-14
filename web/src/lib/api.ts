@@ -1,6 +1,7 @@
 // Typed fetch wrappers over the backend REST API (src/server/api.ts). Types
 // are local, minimal mirrors of the server's shapes — kept web/ fully
 // decoupled from the root package (separate tsconfig/module system).
+import { authHeaders } from "./auth";
 export interface Project {
 	id: string;
 	name: string;
@@ -77,7 +78,7 @@ export interface FileEntry {
 }
 
 async function requestText(path: string): Promise<string> {
-	const res = await fetch(`/api${path}`);
+	const res = await fetch(`/api${path}`, { headers: { ...authHeaders() } });
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));
 		throw new Error(body.error ?? `${res.status} ${res.statusText}`);
@@ -88,7 +89,7 @@ async function requestText(path: string): Promise<string> {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(`/api${path}`, {
 		...init,
-		headers: { "Content-Type": "application/json", ...init?.headers },
+		headers: { "Content-Type": "application/json", ...authHeaders(), ...init?.headers },
 	});
 	if (!res.ok) {
 		const body = await res.json().catch(() => ({}));

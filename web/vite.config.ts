@@ -17,16 +17,22 @@ const https =
 		? { key: readFileSync(KEY_PATH), cert: readFileSync(CERT_PATH) }
 		: undefined;
 
+// Safe by default: bind the dev server to IPv4 loopback only, matching the
+// backend (src/config.ts WEB_HOST). This still serves localhost, 127.0.0.1,
+// and a custom hostname mapped to 127.0.0.1 in /etc/hosts (like scion.test),
+// but is NOT reachable from the LAN. Set SCION_HOST=0.0.0.0 to opt into network
+// access — the backend then requires a shared-secret token (see
+// src/server/auth.ts / docs/WEB_GUIDE.md); do NOT expose the dev server to the
+// LAN without also running the backend in that authenticated network mode.
+const host = process.env.SCION_HOST?.trim() || "127.0.0.1";
+
 // Dev proxy forwards /api and /ws to the backend server (src/server/index.ts,
 // port 5177) so the browser sees everything same-origin.
 export default defineConfig({
 	plugins: [react(), tailwindcss()],
 	server: {
 		port: 5173,
-		// Listen on all interfaces (IPv4 + IPv6), not just IPv6 localhost —
-		// otherwise a custom hostname mapped to 127.0.0.1 (IPv4) in /etc/hosts,
-		// like scion.test, can't reach a vite that's bound only to ::1.
-		host: true,
+		host,
 		https,
 		// Vite rejects Host headers it doesn't recognize; allow the local
 		// custom domain (mapped to 127.0.0.1 via /etc/hosts) so scion.test:5173
