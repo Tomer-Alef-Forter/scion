@@ -1,6 +1,8 @@
 // Localhost receiver for Claude lifecycle hooks. notify.sh POSTs here with a
-// `{ json: { terminalId, eventType, agent } }` envelope (the outer `json`
-// wrapper is just kept as a stable, versionable shape for the payload).
+// `{ json: { terminalId, eventType, agent, transcriptPath } }` envelope (the
+// outer `json` wrapper is just kept as a stable, versionable shape for the
+// payload). `transcriptPath` is Claude Code's own `transcript_path` hook
+// field, forwarded verbatim — see engine/usage.ts for what we do with it.
 //
 // Binds the preferred port, but falls back to an ephemeral port if it's taken
 // (e.g. a second instance) instead of crashing on EADDRINUSE. The resolved URL
@@ -26,7 +28,7 @@ export function startHookServer(status: StatusStore): Promise<Server> {
 			try {
 				const body = JSON.parse(raw);
 				const payload = body.json ?? body;
-				const { terminalId, eventType } = payload;
+				const { terminalId, eventType, transcriptPath } = payload;
 				if (terminalId && eventType) {
 					const workspaceId = getSession(terminalId)?.workspaceId;
 					if (workspaceId) {
@@ -36,6 +38,8 @@ export function startHookServer(status: StatusStore): Promise<Server> {
 							agentId: payload.agent?.agentId || "claude",
 							agentSessionId: payload.agent?.sessionId,
 							eventType,
+							transcriptPath:
+								typeof transcriptPath === "string" ? transcriptPath : undefined,
 						});
 					}
 				}

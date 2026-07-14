@@ -3,7 +3,7 @@
 // grid re-renders on every status/diff refresh.
 import { memo } from "react";
 import { StatusIndicator } from "../StatusIndicator/StatusIndicator";
-import type { DiffSummary, WorkspaceWithStatus } from "../../lib/api";
+import type { DiffSummary, SessionUsage, WorkspaceWithStatus } from "../../lib/api";
 import { cn } from "../../lib/utils";
 
 const MINUTE_MS = 60_000;
@@ -18,6 +18,29 @@ function formatTimeAgo(createdAt: number): string {
 	if (elapsed < DAY_MS) return `${Math.floor(elapsed / HOUR_MS)}h`;
 	if (elapsed < MONTH_MS) return `${Math.floor(elapsed / DAY_MS)}d`;
 	return `${Math.floor(elapsed / MONTH_MS)}mo`;
+}
+
+/** "12.3k tokens" / "842 tokens" — compact token-count formatting. */
+function formatTokenCount(n: number): string {
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+	return `${n}`;
+}
+
+/** " · 12.3k tokens" — cumulative input+output tokens for the session, real
+ * numbers read from Claude Code's own transcript (see engine/usage.ts).
+ * Nothing shown until at least one turn has completed. No cost shown: there
+ * is no cost/price field anywhere in the source data (see
+ * docs/WEB_GUIDE.md §12) — we don't estimate one. */
+function TokenStats({ usage }: { usage: SessionUsage | null }) {
+	if (!usage || usage.turnCount === 0) return null;
+	const total = usage.totalInputTokens + usage.totalOutputTokens;
+	return (
+		<>
+			{" · "}
+			{formatTokenCount(total)} tokens
+		</>
+	);
 }
 
 /** " · +12 -3 · 2 uncommitted" — nothing at all if the worktree is clean. */
@@ -69,6 +92,7 @@ function WorkspaceCardImpl({
 				<span className="truncate pl-4 text-xs text-muted-foreground">
 					{workspace.branch}
 					<DiffStats diff={workspace.diff} />
+					<TokenStats usage={workspace.usage} />
 					{!workspace.terminalId && " · click to resume"}
 				</span>
 			</div>

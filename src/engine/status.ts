@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/db.ts";
 import { terminalAgentBindings } from "../db/schema.ts";
+import { parseTranscriptUsage } from "./usage.ts";
 
 // ---- event normalization ----
 //
@@ -98,6 +99,17 @@ export function deriveStatus(
 	}
 }
 
+/** Cumulative token usage for a session — see engine/usage.ts for how it's
+ * derived (real transcript data, no cost field — none exists to read). */
+export interface SessionUsage {
+	totalInputTokens: number;
+	totalOutputTokens: number;
+	totalCacheCreationTokens: number;
+	totalCacheReadTokens: number;
+	turnCount: number;
+	usageUpdatedAt: number | null;
+}
+
 export interface StatusStore {
 	events: EventEmitter;
 	recordEvent(input: {
@@ -106,6 +118,10 @@ export interface StatusStore {
 		agentId: string;
 		agentSessionId?: string;
 		eventType: string;
+		/** Path to the Claude Code transcript JSONL for this session, taken
+		 * verbatim from the hook payload's `transcript_path` field. Only used
+		 * on a "Stop" event, to (re)compute cumulative token usage. */
+		transcriptPath?: string;
 	}): void;
 	markExited(terminalId: string): void;
 	markSeen(workspaceId: string): void;
@@ -115,6 +131,7 @@ export interface StatusStore {
 		lastEventAt: number;
 		status: AgentStatus;
 		agentSessionId: string | null;
+		usage: SessionUsage;
 	}>;
 }
 
@@ -130,6 +147,7 @@ export function createStatusStore(db: Db): StatusStore {
 		agentId: string;
 		agentSessionId?: string;
 		lifecycle: AgentLifecycleEventType;
+		transcriptPath?: string;
 	}): void {
 		const now = Date.now();
 		const row = db
@@ -138,9 +156,28 @@ export function createStatusStore(db: Db): StatusStore {
 			.where(eq(terminalAgentBindings.terminalId, input.terminalId))
 			.get();
 
+		// Only a "Stop" (turn finished) means the transcript has a new,
+		// complete assistant message to count — re-derive cumulative totals
+		// from scratch each time so this stays correct even if we miss an
+		// event (e.g. daemon restart) rather than trying to track deltas.
+		const usage =
+			input.lifecycle === "Stop" && input.transcriptPath
+				? parseTranscriptUsage(input.transcriptPath)
+				: null;
+		const usageFields = usage
+			? {
+					totalInputTokens: usage.inputTokens,
+					totalOutputTokens: usage.outputTokens,
+					totalCacheCreationTokens: usage.cacheCreationTokens,
+					totalCacheReadTokens: usage.cacheReadTokens,
+					turnCount: usage.turnCount,
+					usageUpdatedAt: now,
+				}
+			: {};
+
 		if (row) {
 			db.update(terminalAgentBindings)
-				.set({ lastEventAt: now, lastEventType: input.lifecycle })
+				.set({ lastEventAt: now, lastEventType: input.lifecycle, ...usageFields })
 				.where(eq(terminalAgentBindings.terminalId, input.terminalId))
 				.run();
 			return;
@@ -155,6 +192,7 @@ export function createStatusStore(db: Db): StatusStore {
 				startedAt: now,
 				lastEventAt: now,
 				lastEventType: input.lifecycle,
+				...usageFields,
 			})
 			.run();
 	}
@@ -211,6 +249,14 @@ export function createStatusStore(db: Db): StatusStore {
 					lastEventAt: row.lastEventAt,
 					status: deriveStatus(lastEventType, row.lastEventAt, seenAt),
 					agentSessionId: row.agentSessionId,
+					usage: {
+						totalInputTokens: row.totalInputTokens,
+						totalOutputTokens: row.totalOutputTokens,
+						totalCacheCreationTokens: row.totalCacheCreationTokens,
+						totalCacheReadTokens: row.totalCacheReadTokens,
+						turnCount: row.turnCount,
+						usageUpdatedAt: row.usageUpdatedAt,
+					},
 				};
 			});
 		},

@@ -70,6 +70,12 @@ async function enrichWorkspace(
 	// row. Gate on a LIVE session so a dead workspace always reports "done",
 	// never a stale status.
 	let derivedStatus: string;
+	// Cumulative token usage for the workspace's current binding, if any —
+	// real numbers read from Claude Code's own transcript (see
+	// engine/usage.ts), null when there's nothing to report yet (no Claude
+	// binding, or no "Stop" event has landed yet). No cost field: none exists
+	// in the source data, see docs/WEB_GUIDE.md §12.
+	let usage: ReturnType<StatusStore["listByWorkspace"]>[number]["usage"] | null = null;
 	if (liveSessions.length === 0) {
 		derivedStatus = "done";
 	} else if (workspace.agentType !== "claude") {
@@ -81,12 +87,14 @@ async function enrichWorkspace(
 	} else {
 		const bindings = status.listByWorkspace(workspace.id);
 		derivedStatus = bindings[0]?.status ?? "starting";
+		usage = bindings[0]?.usage ?? null;
 	}
 	return {
 		...workspace,
 		status: derivedStatus,
 		terminalId: liveSessions[0]?.id ?? null,
 		diff,
+		usage,
 	};
 }
 
