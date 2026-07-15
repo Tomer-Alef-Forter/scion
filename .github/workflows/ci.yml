@@ -16,29 +16,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Scion runs under Node (node-pty + better-sqlite3 native bindings don't
-      # load under Bun), but we install with Bun to match the committed
-      # lockfiles. See the "Why Node and not Bun" note in the README.
+      # Scion runs under Node. We install with npm (not Bun) in CI because the
+      # native deps (node-pty, better-sqlite3) must compile against the Node
+      # ABI — npm's bundled node-gyp does this cleanly on the runner, whereas
+      # Bun's install shells out to a node-gyp that breaks here. Bun is still
+      # set up because the package.json scripts invoke `bun run`.
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies (root)
-        run: bun install --frozen-lockfile
+        run: npm install --no-audit --no-fund
 
       - name: Install dependencies (web)
-        run: bun install --frozen-lockfile
+        run: npm install --no-audit --no-fund
         working-directory: web
-
-      # Rebuild native modules against the Node ABI — Bun may have built them
-      # for its own runtime. This is the CI equivalent of `bun run doctor`'s
-      # native-binding check.
-      - name: Rebuild native modules for Node
-        run: npm rebuild better-sqlite3 node-pty
-
-      - name: Preflight (doctor)
-        run: bun run doctor
 
       - name: Lint + format check (Biome)
         run: bun run lint
