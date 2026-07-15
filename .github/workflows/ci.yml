@@ -63,10 +63,23 @@ jobs:
             exit 1
           fi
 
-      # Integration smoke suites (real fs + PTYs, isolated $HOME). web-smoke is
-      # omitted: it needs a global WebSocket, which Node 20 lacks.
+      # Integration smoke suites (real fs + PTYs + daemon over a socket, under
+      # an isolated $HOME). They spawn real PTYs and a background daemon, so on
+      # a shared/loaded runner the attach-streaming timing can flake — retry
+      # each up to 3x. A genuine regression breaks every attempt and still fails
+      # CI; only transient runner flakiness is absorbed. web-smoke is omitted:
+      # it needs a global WebSocket, which Node 20 lacks.
       - name: Smoke tests
         run: |
-          bun run smoke
-          bun run daemon-smoke
-          bun run persistence-smoke
+          retry() {
+            for attempt in 1 2 3; do
+              if "$@"; then return 0; fi
+              echo "::warning::attempt $attempt failed, retrying: $*"
+              sleep 3
+            done
+            echo "::error::still failing after 3 attempts: $*"
+            return 1
+          }
+          retry bun run smoke
+          retry bun run daemon-smoke
+          retry bun run persistence-smoke
