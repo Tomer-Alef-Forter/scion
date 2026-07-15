@@ -42,10 +42,7 @@ function sanitizeBranchName(name: string): string {
  * return it unchanged. Otherwise append "-1", "-2", ... to its last path
  * segment until one isn't taken.
  */
-export function deduplicateBranchName(
-	candidate: string,
-	existingBranchNames: string[],
-): string {
+export function deduplicateBranchName(candidate: string, existingBranchNames: string[]): string {
 	const trimmed = candidate.trim();
 	if (!trimmed) return trimmed;
 
@@ -96,10 +93,7 @@ export function generateSlug(
 		const cut = trimmedBase.slice(0, budget);
 		// Prefer breaking on a whole word if the cut only loses a small tail.
 		const lastHyphen = cut.lastIndexOf("-");
-		trimmedBase = (lastHyphen > budget * 0.7 ? cut.slice(0, lastHyphen) : cut).replace(
-			/-+$/,
-			"",
-		);
+		trimmedBase = (lastHyphen > budget * 0.7 ? cut.slice(0, lastHyphen) : cut).replace(/-+$/, "");
 	}
 
 	return `${trimmedBase}-${randomSlugSuffix(randomLength)}`;

@@ -9,9 +9,7 @@ export interface StatusChangeMessage {
 	workspaceId: string;
 }
 
-export function subscribeToStatusEvents(
-	onChange: (workspaceId: string) => void,
-): () => void {
+export function subscribeToStatusEvents(onChange: (workspaceId: string) => void): () => void {
 	let socket: WebSocket | null = null;
 	let disposed = false;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;

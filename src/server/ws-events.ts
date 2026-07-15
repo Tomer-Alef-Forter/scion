@@ -4,9 +4,7 @@
 import type { WSContext, WSEvents } from "hono/ws";
 import type { StatusStore } from "../engine/status.ts";
 
-export function createEventsSocketHandlers(
-	status: StatusStore,
-): WSEvents<unknown> {
+export function createEventsSocketHandlers(status: StatusStore): WSEvents<unknown> {
 	let cleanup: () => void = () => {};
 
 	return {

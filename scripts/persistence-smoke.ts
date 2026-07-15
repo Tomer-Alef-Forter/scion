@@ -167,7 +167,10 @@ async function main() {
 		const daemonPidBefore = listeningPids(DAEMON_LOG).at(-1);
 		const hostPid = listeningPids(PTY_HOST_LOG).at(-1);
 		check("the proxy daemon logged a pid", daemonPidBefore !== undefined);
-		check("the durable host is a separate process", hostPid !== undefined && hostPid !== daemonPidBefore);
+		check(
+			"the durable host is a separate process",
+			hostPid !== undefined && hostPid !== daemonPidBefore,
+		);
 
 		if (daemonPidBefore !== undefined) process.kill(daemonPidBefore, "SIGKILL");
 		// Prove it actually went down before it comes back.

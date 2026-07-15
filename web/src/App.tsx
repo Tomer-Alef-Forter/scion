@@ -16,7 +16,13 @@ import { SettingsModal } from "./components/SettingsModal/SettingsModal";
 import { type WebTerminalHandle, WebTerminal } from "./components/WebTerminal";
 import { WorkspaceContextMenu } from "./components/WorkspaceGrid/WorkspaceContextMenu";
 import { WorkspaceGrid } from "./components/WorkspaceGrid/WorkspaceGrid";
-import { api, type AgentStatus, type HostSettings, type Project, type WorkspaceWithStatus } from "./lib/api";
+import {
+	api,
+	type AgentStatus,
+	type HostSettings,
+	type Project,
+	type WorkspaceWithStatus,
+} from "./lib/api";
 import { subscribeToStatusEvents } from "./lib/eventsSocket";
 import { isTypingTarget } from "./lib/keyboardShortcuts";
 import { notifyAgentAttention } from "./lib/notifications";
@@ -96,21 +102,27 @@ export function App() {
 	const autoFocusTerminalRef = useRef(false);
 
 	useEffect(() => {
-		api.listProjects().then(setProjects).catch((e) => setError(String(e)));
-		api.getSettings().then((s) => {
-			setSettings(s);
-			// Reopen whatever was open last time — if it's gone (deleted since),
-			// getWorkspace 404s and we just leave nothing selected.
-			if (s.lastOpenedWorkspaceId) {
-				api
-					.getWorkspace(s.lastOpenedWorkspaceId)
-					.then((ws) => {
-						setSelectedProjectId(ws.projectId);
-						handleSelectWorkspace(ws);
-					})
-					.catch(() => {});
-			}
-		}).catch((e) => setError(String(e)));
+		api
+			.listProjects()
+			.then(setProjects)
+			.catch((e) => setError(String(e)));
+		api
+			.getSettings()
+			.then((s) => {
+				setSettings(s);
+				// Reopen whatever was open last time — if it's gone (deleted since),
+				// getWorkspace 404s and we just leave nothing selected.
+				if (s.lastOpenedWorkspaceId) {
+					api
+						.getWorkspace(s.lastOpenedWorkspaceId)
+						.then((ws) => {
+							setSelectedProjectId(ws.projectId);
+							handleSelectWorkspace(ws);
+						})
+						.catch(() => {});
+				}
+			})
+			.catch((e) => setError(String(e)));
 	}, []);
 
 	// Auto-dismiss the error toast — re-arms on every new error (including one
@@ -256,9 +268,7 @@ export function App() {
 		setError(null);
 		try {
 			const project = await api.addProject(repoPath);
-			setProjects((prev) =>
-				prev.some((p) => p.id === project.id) ? prev : [...prev, project],
-			);
+			setProjects((prev) => (prev.some((p) => p.id === project.id) ? prev : [...prev, project]));
 			setSelectedProjectId(project.id);
 		} catch (e) {
 			setError(String(e));
@@ -736,14 +746,15 @@ export function App() {
 							<>
 								<div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
 									<div className="min-w-0">
-										<div className="truncate text-sm font-medium">
-											{selectedWorkspace.name}
-										</div>
+										<div className="truncate text-sm font-medium">{selectedWorkspace.name}</div>
 										<div className="truncate text-xs text-muted-foreground">
 											{selectedWorkspace.branch}
 										</div>
 										<div className="mt-1">
-											<PrStatusBadge key={selectedWorkspace.id} workspaceId={selectedWorkspace.id} />
+											<PrStatusBadge
+												key={selectedWorkspace.id}
+												workspaceId={selectedWorkspace.id}
+											/>
 										</div>
 									</div>
 									<div className="flex shrink-0 gap-1.5">
@@ -829,18 +840,14 @@ export function App() {
 											))}
 										{activeTab === "diff" && (
 											<Suspense
-												fallback={
-													<div className="p-4 text-sm text-muted-foreground">Loading…</div>
-												}
+												fallback={<div className="p-4 text-sm text-muted-foreground">Loading…</div>}
 											>
 												<DiffPane workspaceId={selectedWorkspace.id} />
 											</Suspense>
 										)}
 										{activeTab === "files" && (
 											<Suspense
-												fallback={
-													<div className="p-4 text-sm text-muted-foreground">Loading…</div>
-												}
+												fallback={<div className="p-4 text-sm text-muted-foreground">Loading…</div>}
 											>
 												<FilesPane workspaceId={selectedWorkspace.id} />
 											</Suspense>
@@ -865,7 +872,7 @@ export function App() {
 				<div className="flex flex-1 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
 					<span>
 						{projects.length === 0
-							? 'Add a project on the left to get started.'
+							? "Add a project on the left to get started."
 							: "Select a project."}
 					</span>
 				</div>
@@ -874,11 +881,7 @@ export function App() {
 			{error && (
 				<div className="fixed bottom-3 right-3 max-w-sm rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive shadow-lg">
 					{error}
-					<button
-						type="button"
-						onClick={() => setError(null)}
-						className="ml-2 underline"
-					>
+					<button type="button" onClick={() => setError(null)} className="ml-2 underline">
 						dismiss
 					</button>
 				</div>

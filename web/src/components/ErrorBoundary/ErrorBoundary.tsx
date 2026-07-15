@@ -35,12 +35,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 		if (this.state.error) {
 			return (
 				<div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-					<p className="text-sm font-medium text-destructive">
-						This panel failed to render.
-					</p>
-					<p className="max-w-md text-xs text-muted-foreground">
-						{this.state.error.message}
-					</p>
+					<p className="text-sm font-medium text-destructive">This panel failed to render.</p>
+					<p className="max-w-md text-xs text-muted-foreground">{this.state.error.message}</p>
 					<button
 						type="button"
 						onClick={() => this.setState({ error: null })}

@@ -3,10 +3,7 @@
 import { spawn } from "node:child_process";
 import { getColoredDiff } from "../engine/diff.ts";
 
-export async function runDiffPager(
-	repoPath: string,
-	worktreePath: string,
-): Promise<void> {
+export async function runDiffPager(repoPath: string, worktreePath: string): Promise<void> {
 	const diff = await getColoredDiff(repoPath, worktreePath);
 	await new Promise<void>((resolve) => {
 		const less = spawn("less", ["-R"], {

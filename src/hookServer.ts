@@ -38,8 +38,7 @@ export function startHookServer(status: StatusStore): Promise<Server> {
 							agentId: payload.agent?.agentId || "claude",
 							agentSessionId: payload.agent?.sessionId,
 							eventType,
-							transcriptPath:
-								typeof transcriptPath === "string" ? transcriptPath : undefined,
+							transcriptPath: typeof transcriptPath === "string" ? transcriptPath : undefined,
 						});
 					}
 				}

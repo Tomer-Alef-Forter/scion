@@ -2,8 +2,7 @@
 // before this is called and re-rendered after it resolves. Detach with Ctrl-b d.
 import type { PtyBackend } from "../engine/ptyBackend.ts";
 
-const DETACH_HINT =
-	"\r\n\x1b[2m[scion] attached — press Ctrl-b then d to detach]\x1b[0m\r\n";
+const DETACH_HINT = "\r\n\x1b[2m[scion] attached — press Ctrl-b then d to detach]\x1b[0m\r\n";
 
 export async function runAttach(terminalId: string, backend: PtyBackend): Promise<void> {
 	const { stdin, stdout } = process;

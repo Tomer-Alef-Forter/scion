@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import React, { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import type { DiffSummary } from "../../engine/diff.ts";
 import { getCachedDiffSummary, invalidateDiffCache } from "../../engine/diff.ts";
 import { mergeBack } from "../../engine/mergeBack.ts";
@@ -208,17 +208,14 @@ export function Dashboard({
 				{project ? project.name : "?"} · workspaces
 			</Text>
 			<Box marginTop={1} flexDirection="column">
-				{workspaces.length === 0 && (
-					<Text dimColor>No workspaces. Press "n" to create one.</Text>
-				)}
+				{workspaces.length === 0 && <Text dimColor>No workspaces. Press "n" to create one.</Text>}
 				{workspaces.map((ws, i) => {
 					const s = statusFor(ws.id);
 					const sum = summaries[ws.id];
 					return (
 						<Text key={ws.id} color={i === index ? "green" : undefined}>
 							{i === index ? "❯ " : "  "}
-							<Text color={STATUS_COLOR[s.label]}>{`[${s.label}]`.padEnd(11)}</Text>{" "}
-							{ws.name}{" "}
+							<Text color={STATUS_COLOR[s.label]}>{`[${s.label}]`.padEnd(11)}</Text> {ws.name}{" "}
 							<Text dimColor>
 								({ws.branch}
 								{sum
@@ -239,8 +236,7 @@ export function Dashboard({
 
 			<Box marginTop={1}>
 				<Text dimColor>
-					↑/↓ · enter attach · n new · d diff · m merge · o open · x remove · b
-					back · q quit
+					↑/↓ · enter attach · n new · d diff · m merge · o open · x remove · b back · q quit
 				</Text>
 			</Box>
 		</Box>

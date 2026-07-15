@@ -10,18 +10,11 @@ import { resolveDefaultBranch } from "./worktrees.ts";
 const execFileAsync = promisify(execFile);
 
 /** Base branch for a worktree: recorded `branch.<b>.base` config, else default. */
-export async function getBaseBranch(
-	repoPath: string,
-	worktreePath: string,
-): Promise<string> {
+export async function getBaseBranch(repoPath: string, worktreePath: string): Promise<string> {
 	const git = createUserSimpleGit(worktreePath);
-	const branch = (
-		await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")
-	).trim();
+	const branch = (await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")).trim();
 	if (branch && branch !== "HEAD") {
-		const configured = (
-			await git.raw(["config", `branch.${branch}.base`]).catch(() => "")
-		).trim();
+		const configured = (await git.raw(["config", `branch.${branch}.base`]).catch(() => "")).trim();
 		if (configured) return configured;
 	}
 	return resolveDefaultBranch(repoPath);
@@ -29,9 +22,10 @@ export async function getBaseBranch(
 
 async function mergeBase(worktreePath: string, base: string): Promise<string> {
 	const git = createUserSimpleGit(worktreePath);
-	return (
-		await git.raw(["merge-base", base, "HEAD"]).then((s) => s.trim()).catch(() => base)
-	);
+	return await git
+		.raw(["merge-base", base, "HEAD"])
+		.then((s) => s.trim())
+		.catch(() => base);
 }
 
 export interface DiffSummary {
@@ -42,10 +36,7 @@ export interface DiffSummary {
 }
 
 /** Files/insertions/deletions vs the merge-base, plus uncommitted file count. */
-export async function getDiffSummary(
-	repoPath: string,
-	worktreePath: string,
-): Promise<DiffSummary> {
+export async function getDiffSummary(repoPath: string, worktreePath: string): Promise<DiffSummary> {
 	const git = createUserSimpleGit(worktreePath);
 	const base = await getBaseBranch(repoPath, worktreePath);
 	const origin = await mergeBase(worktreePath, base);
@@ -53,9 +44,7 @@ export async function getDiffSummary(
 	let filesChanged = 0;
 	let insertions = 0;
 	let deletions = 0;
-	const numstat = await git
-		.raw(["diff", "--numstat", origin])
-		.catch(() => "");
+	const numstat = await git.raw(["diff", "--numstat", origin]).catch(() => "");
 	for (const line of numstat.trim().split("\n")) {
 		if (!line) continue;
 		const [add, del] = line.split("\t");
@@ -108,10 +97,7 @@ export function invalidateDiffCache(worktreePath: string): void {
 }
 
 /** Colored unified diff from the merge-base to the working tree. */
-export async function getColoredDiff(
-	repoPath: string,
-	worktreePath: string,
-): Promise<string> {
+export async function getColoredDiff(repoPath: string, worktreePath: string): Promise<string> {
 	const base = await getBaseBranch(repoPath, worktreePath);
 	const origin = await mergeBase(worktreePath, base);
 	const { stdout } = await execFileAsync(
@@ -127,10 +113,7 @@ export async function getColoredDiff(
  * (the web UI) that want to render/highlight the diff themselves rather than
  * consume ANSI escape codes.
  */
-export async function getUnifiedDiff(
-	repoPath: string,
-	worktreePath: string,
-): Promise<string> {
+export async function getUnifiedDiff(repoPath: string, worktreePath: string): Promise<string> {
 	const base = await getBaseBranch(repoPath, worktreePath);
 	const origin = await mergeBase(worktreePath, base);
 	const { stdout } = await execFileAsync(

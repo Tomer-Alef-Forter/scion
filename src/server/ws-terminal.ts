@@ -47,11 +47,7 @@ function parseClientMessage(raw: unknown): ClientMessage | null {
 	if (msg.type === "input" && typeof msg.data === "string") {
 		return { type: "input", data: msg.data };
 	}
-	if (
-		msg.type === "resize" &&
-		typeof msg.cols === "number" &&
-		typeof msg.rows === "number"
-	) {
+	if (msg.type === "resize" && typeof msg.cols === "number" && typeof msg.rows === "number") {
 		return { type: "resize", cols: msg.cols, rows: msg.rows };
 	}
 	return null;

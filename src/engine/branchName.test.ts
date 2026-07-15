@@ -92,9 +92,7 @@ describe("deduplicateBranchName", () => {
 	});
 
 	it("preserves the path prefix when suffixing the last segment", () => {
-		expect(deduplicateBranchName("team/feat/foo", ["team/feat/foo"])).toBe(
-			"team/feat/foo-1",
-		);
+		expect(deduplicateBranchName("team/feat/foo", ["team/feat/foo"])).toBe("team/feat/foo-1");
 	});
 
 	it("replaces an existing numeric suffix on the candidate rather than stacking it", () => {

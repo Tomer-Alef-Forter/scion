@@ -85,9 +85,7 @@ async function main() {
 		check("worktree dir exists", existsSync(wt.worktreePath));
 		check(
 			"branch created",
-			git(repo, ["branch", "--format=%(refname:short)"])
-				.split("\n")
-				.includes("feat/smoke"),
+			git(repo, ["branch", "--format=%(refname:short)"]).split("\n").includes("feat/smoke"),
 		);
 		check("base branch resolved to main", wt.baseBranch === "main");
 
@@ -130,14 +128,8 @@ async function main() {
 		const fileList = await listFiles(wt.worktreePath);
 		const filePaths = fileList.map((f) => f.path);
 		check("listFiles includes tracked committed file", filePaths.includes("feature.txt"));
-		check(
-			"listFiles includes untracked-but-not-ignored file",
-			filePaths.includes("untracked.txt"),
-		);
-		check(
-			"listFiles excludes gitignored file",
-			!filePaths.includes("ignored.txt"),
-		);
+		check("listFiles includes untracked-but-not-ignored file", filePaths.includes("untracked.txt"));
+		check("listFiles excludes gitignored file", !filePaths.includes("ignored.txt"));
 
 		const readBack = await readWorktreeFile(wt.worktreePath, "feature.txt");
 		check("readWorktreeFile returns correct contents", readBack === "hello from agent\n");
@@ -213,31 +205,20 @@ async function main() {
 
 		await postHook("Stop");
 		await sleep(60);
-		check(
-			"Stop → review (unseen)",
-			status.listByWorkspace("ws-smoke-1")[0]?.status === "review",
-		);
+		check("Stop → review (unseen)", status.listByWorkspace("ws-smoke-1")[0]?.status === "review");
 
 		status.markSeen("ws-smoke-1");
-		check(
-			"markSeen → idle",
-			status.listByWorkspace("ws-smoke-1")[0]?.status === "idle",
-		);
+		check("markSeen → idle", status.listByWorkspace("ws-smoke-1")[0]?.status === "idle");
 
 		await postHook("SessionEnd");
 		await sleep(60);
-		check(
-			"SessionEnd removes binding",
-			status.listByWorkspace("ws-smoke-1").length === 0,
-		);
+		check("SessionEnd removes binding", status.listByWorkspace("ws-smoke-1").length === 0);
 
 		// ---- notify.sh: run the real installed script as a subprocess (not the
 		// direct fetch() above) — proves the shell script itself still parses
 		// stdin JSON and posts the right shape after its rewrite. ----
 
-		const notifyScript = fileURLToPath(
-			new URL("../src/setup/notify.sh", import.meta.url),
-		);
+		const notifyScript = fileURLToPath(new URL("../src/setup/notify.sh", import.meta.url));
 		execFileSync("bash", [notifyScript], {
 			input: JSON.stringify({ session_id: "s2", hook_event_name: "UserPromptSubmit" }),
 			env: {
@@ -269,8 +250,7 @@ async function main() {
 
 		check(
 			"buildClaudeArgv: no prompt/no resume",
-			JSON.stringify(buildClaudeArgv({})) ===
-				JSON.stringify(["--permission-mode", "auto"]),
+			JSON.stringify(buildClaudeArgv({})) === JSON.stringify(["--permission-mode", "auto"]),
 		);
 		check(
 			"buildClaudeArgv: prompt only",
@@ -284,16 +264,8 @@ async function main() {
 		);
 		check(
 			"buildClaudeArgv: resume + prompt (resume flag precedes prompt)",
-			JSON.stringify(
-				buildClaudeArgv({ prompt: "fix bug", resumeSessionId: "sess-123" }),
-			) ===
-				JSON.stringify([
-					"--permission-mode",
-					"auto",
-					"--resume",
-					"sess-123",
-					"fix bug",
-				]),
+			JSON.stringify(buildClaudeArgv({ prompt: "fix bug", resumeSessionId: "sess-123" })) ===
+				JSON.stringify(["--permission-mode", "auto", "--resume", "sess-123", "fix bug"]),
 		);
 
 		// ---- buildAgentArgv: gemini/codex flag handling (pure, no spawn) ----
@@ -386,8 +358,7 @@ async function main() {
 		);
 		check(
 			"deduplicateBranchName: skips past existing numeric suffixes",
-			deduplicateBranchName("feat/foo", ["feat/foo", "feat/foo-1", "feat/foo-2"]) ===
-				"feat/foo-3",
+			deduplicateBranchName("feat/foo", ["feat/foo", "feat/foo-1", "feat/foo-2"]) === "feat/foo-3",
 		);
 		check(
 			"deduplicateBranchName: collision check is case-insensitive",
@@ -404,9 +375,7 @@ async function main() {
 			JSON.stringify(
 				{
 					hooks: {
-						Stop: [
-							{ hooks: [{ type: "command", command: "echo user-configured-hook" }] },
-						],
+						Stop: [{ hooks: [{ type: "command", command: "echo user-configured-hook" }] }],
 					},
 				},
 				null,
@@ -418,7 +387,9 @@ async function main() {
 		const afterInstall = JSON.parse(readFileSync(claudeSettingsPath, "utf-8"));
 		const stopHooksAfterInstall: Array<{ hooks?: Array<{ command: string }> }> =
 			afterInstall.hooks.Stop;
-		const allStopCommands = stopHooksAfterInstall.flatMap((d) => d.hooks?.map((h) => h.command) ?? []);
+		const allStopCommands = stopHooksAfterInstall.flatMap(
+			(d) => d.hooks?.map((h) => h.command) ?? [],
+		);
 		check(
 			"installClaudeHooks: preserves the user's own pre-existing hook",
 			allStopCommands.includes("echo user-configured-hook"),
@@ -427,10 +398,7 @@ async function main() {
 			"installClaudeHooks: adds our own managed hook alongside it",
 			allStopCommands.some((c) => c.includes("hooks/notify.sh")),
 		);
-		check(
-			"installClaudeHooks: writes an executable notify.sh",
-			existsSync(NOTIFY_SCRIPT_PATH),
-		);
+		check("installClaudeHooks: writes an executable notify.sh", existsSync(NOTIFY_SCRIPT_PATH));
 
 		installClaudeHooks(); // run again — must not duplicate our own entry
 		const afterReinstall = JSON.parse(readFileSync(claudeSettingsPath, "utf-8"));
@@ -628,7 +596,11 @@ async function main() {
 			"updateSettings persists lastOpenedWorkspaceId",
 			store.getSettings().lastOpenedWorkspaceId === reopenWs.workspace.id,
 		);
-		await store.deleteWorkspace({ workspaceId: reopenWs.workspace.id, deleteBranch: true, force: true });
+		await store.deleteWorkspace({
+			workspaceId: reopenWs.workspace.id,
+			deleteBranch: true,
+			force: true,
+		});
 		check(
 			"deleteWorkspace clears lastOpenedWorkspaceId when it named the deleted workspace",
 			store.getSettings().lastOpenedWorkspaceId === null,

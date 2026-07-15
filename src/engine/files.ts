@@ -47,10 +47,7 @@ function assertSafeRelativePath(relPath: string): void {
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB — avoid choking the browser
 
 /** Read-only. Rejects absolute paths and any `..` segment. */
-export async function readWorktreeFile(
-	worktreePath: string,
-	relPath: string,
-): Promise<string> {
+export async function readWorktreeFile(worktreePath: string, relPath: string): Promise<string> {
 	assertSafeRelativePath(relPath);
 	const fullPath = join(worktreePath, relPath);
 
@@ -59,9 +56,7 @@ export async function readWorktreeFile(
 		throw new Error("Not a file");
 	}
 	if (info.size > MAX_FILE_SIZE_BYTES) {
-		throw new Error(
-			`File too large to preview (${Math.round(info.size / 1024)} KB)`,
-		);
+		throw new Error(`File too large to preview (${Math.round(info.size / 1024)} KB)`);
 	}
 
 	return readFile(fullPath, "utf-8");

@@ -81,7 +81,8 @@ async function main() {
 		if (workspace) {
 			try {
 				const live = (await backend.listSessions(workspace.id)).find((s) => !s.exited);
-				const terminalId = live?.id ?? (await store.resumeWorkspace({ workspaceId: workspace.id })).terminalId;
+				const terminalId =
+					live?.id ?? (await store.resumeWorkspace({ workspaceId: workspace.id })).terminalId;
 				status.markSeen(workspace.id);
 				await runAttach(terminalId, backend);
 				initialProjectId = workspace.projectId;

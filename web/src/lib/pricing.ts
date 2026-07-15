@@ -23,9 +23,7 @@ const CACHE_READ_MULTIPLIER = 0.1;
 // tracks the change on its own, without a code edit.
 function sonnet5Rate(now: Date): ModelRate {
 	const introEnds = Date.UTC(2026, 8, 1); // 2026-09-01 UTC (month is 0-indexed)
-	return now.getTime() < introEnds
-		? { input: 2.0, output: 10.0 }
-		: { input: 3.0, output: 15.0 };
+	return now.getTime() < introEnds ? { input: 2.0, output: 10.0 } : { input: 3.0, output: 15.0 };
 }
 
 /** Match a transcript model id to a rate row. Ids look like "claude-sonnet-5",

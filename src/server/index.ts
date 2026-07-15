@@ -58,7 +58,9 @@ async function main() {
 		if (loopbackOnly) {
 			console.log(`[scion] web server listening on http://localhost:${info.port} (localhost only)`);
 		} else {
-			console.log(`[scion] web server listening on http://${WEB_HOST}:${info.port} (NETWORK-EXPOSED)`);
+			console.log(
+				`[scion] web server listening on http://${WEB_HOST}:${info.port} (NETWORK-EXPOSED)`,
+			);
 			console.log(`[scion] auth required — open the UI with the token in the URL, e.g.:`);
 			console.log(`[scion]   http://<this-host>:${info.port}/?token=${authToken}`);
 			console.log(`[scion] token stored at ${AUTH_TOKEN_PATH}`);

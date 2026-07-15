@@ -51,18 +51,13 @@ export function CollapsibleFileDiff({ fileDiff, options }: CollapsibleFileDiffPr
 				<span className="shrink-0 text-xs text-muted-foreground">
 					{fileDiff.type === "new" && "added"}
 					{fileDiff.type === "deleted" && "deleted"}
-					{(fileDiff.type === "rename-pure" || fileDiff.type === "rename-changed") &&
-						"renamed"}
+					{(fileDiff.type === "rename-pure" || fileDiff.type === "rename-changed") && "renamed"}
 				</span>
 				{insertions > 0 && (
-					<span className="shrink-0 text-xs text-green-600 dark:text-green-500">
-						+{insertions}
-					</span>
+					<span className="shrink-0 text-xs text-green-600 dark:text-green-500">+{insertions}</span>
 				)}
 				{deletions > 0 && (
-					<span className="shrink-0 text-xs text-red-600 dark:text-red-500">
-						-{deletions}
-					</span>
+					<span className="shrink-0 text-xs text-red-600 dark:text-red-500">-{deletions}</span>
 				)}
 			</button>
 			<FileDiff

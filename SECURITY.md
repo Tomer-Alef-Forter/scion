@@ -2,11 +2,28 @@
 
 ## Reporting a vulnerability
 
-Please report security issues **privately** — do not open a public GitHub
-issue. Contact the Forter security team through the standard internal channel
-(**TODO: fill in the exact Slack channel / email / ticket queue Forter uses**),
-or reach the repo maintainers directly. We'll acknowledge receipt and keep you
-updated on the fix.
+If you discover a security vulnerability in Scion, please report it responsibly
+by emailing **infosec@forter.com** with the details — **do not** open a public
+GitHub issue for security vulnerabilities. You can also reach the repo
+maintainers directly.
+
+Please include:
+
+- A description of the vulnerability and its potential impact
+- Steps to reproduce it
+- Any relevant proof-of-concept code or screenshots
+- Your contact information for follow-up questions
+
+We will acknowledge receipt within 48 hours and send regular updates on our
+progress. If you don't hear back within 48 hours, please follow up to make sure
+we received the report.
+
+### Disclosure
+
+We ask that you give us reasonable time to investigate and mitigate before
+making anything public, make a good-faith effort to avoid privacy violations
+and service disruption, and not access or modify data that isn't yours. With
+your permission, we're happy to publicly acknowledge your contribution.
 
 ## Security model
 

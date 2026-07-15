@@ -82,8 +82,8 @@ export function NewWorkspaceModal({
 				<h2 className="mb-1 text-sm font-semibold">New workspace</h2>
 				<p className="mb-3 text-xs text-muted-foreground">
 					Describe the task for the agent in <span className="font-medium">{projectName}</span>
-					{" — "}optional. A worktree + branch are created either way; leave it blank to open
-					an agent with no seed task.
+					{" — "}optional. A worktree + branch are created either way; leave it blank to open an
+					agent with no seed task.
 				</p>
 				<form onSubmit={handleSubmit}>
 					<textarea
@@ -166,11 +166,7 @@ export function NewWorkspaceModal({
 							disabled={busy}
 							className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
 						>
-							{busy
-								? "Creating…"
-								: isBatch
-									? `Create ${totalWorkspaces}`
-									: "Create"}
+							{busy ? "Creating…" : isBatch ? `Create ${totalWorkspaces}` : "Create"}
 						</button>
 					</div>
 				</form>

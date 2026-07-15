@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import type { PtyBackend } from "../engine/ptyBackend.ts";
 import type { StatusStore } from "../engine/status.ts";
 import type { Store } from "../store/projects.ts";
@@ -22,9 +22,7 @@ interface Props {
 
 export function App({ store, status, backend, requestExit, initialProjectId }: Props) {
 	const [view, setView] = useState<View>(
-		initialProjectId
-			? { name: "dashboard", projectId: initialProjectId }
-			: { name: "projects" },
+		initialProjectId ? { name: "dashboard", projectId: initialProjectId } : { name: "projects" },
 	);
 
 	if (view.name === "projects") {

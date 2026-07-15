@@ -66,9 +66,7 @@ const EVENT_LIFECYCLE: Record<string, AgentLifecycleEventType> = {
 	task_complete: "Stop",
 };
 
-export function mapEventType(
-	eventType: string | undefined,
-): AgentLifecycleEventType | null {
+export function mapEventType(eventType: string | undefined): AgentLifecycleEventType | null {
 	if (!eventType) return null;
 	return EVENT_LIFECYCLE[eventType] ?? null;
 }

@@ -60,10 +60,9 @@ async function enrichWorkspace(
 	workspace: Workspace,
 ) {
 	const liveSessions = (await backend.listSessions(workspace.id)).filter((s) => !s.exited);
-	const diff = await getCachedDiffSummary(
-		project.repoPath,
-		workspace.worktreePath,
-	).catch(() => null);
+	const diff = await getCachedDiffSummary(project.repoPath, workspace.worktreePath).catch(
+		() => null,
+	);
 	// A binding row can outlive its process — killAll() calls session.kill()
 	// but the app then exits before node-pty's async onExit (which would
 	// normally call status.markExited) has a chance to fire, leaving a stale
@@ -196,8 +195,7 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 
 	api.post("/projects", async (c) => {
 		const body = await c.req.json().catch(() => ({}));
-		const repoPath =
-			typeof body.repoPath === "string" ? body.repoPath.trim() : "";
+		const repoPath = typeof body.repoPath === "string" ? body.repoPath.trim() : "";
 		if (!repoPath) {
 			return c.json({ error: "repoPath is required" }, 400);
 		}
@@ -297,16 +295,12 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 		}
 		const body = await c.req.json().catch(() => ({}));
 		const prompt = typeof body.prompt === "string" ? body.prompt : "";
-		const name =
-			typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined;
+		const name = typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined;
 
 		const presets: AgentType[] = Array.isArray(body.agents)
-			? body.agents.filter((a: unknown): a is AgentType =>
-					AGENT_TYPES.includes(a as AgentType),
-				)
+			? body.agents.filter((a: unknown): a is AgentType => AGENT_TYPES.includes(a as AgentType))
 			: [];
-		const count =
-			Number.isInteger(body.count) && body.count > 0 ? (body.count as number) : 1;
+		const count = Number.isInteger(body.count) && body.count > 0 ? (body.count as number) : 1;
 		// If no explicit presets, fall back to N copies of the default agent.
 		const base = presets.length > 0 ? presets : [store.getSettings().defaultAgent];
 		const agents = base.flatMap((agent) => Array<AgentType>(count).fill(agent));
@@ -380,10 +374,7 @@ export function createApiRoutes({ store, status, backend }: ApiDeps): Hono {
 	api.get("/workspaces/:id/diff", async (c) => {
 		const resolved = resolveWorkspace(store, c.req.param("id"));
 		if (!resolved) return c.json({ error: "Workspace not found" }, 404);
-		const diff = await getUnifiedDiff(
-			resolved.project.repoPath,
-			resolved.workspace.worktreePath,
-		);
+		const diff = await getUnifiedDiff(resolved.project.repoPath, resolved.workspace.worktreePath);
 		return c.text(diff);
 	});
 

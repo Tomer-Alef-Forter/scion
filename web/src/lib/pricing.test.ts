@@ -49,7 +49,10 @@ describe("estimateCostUsd", () => {
 	});
 
 	it("applies Opus rates for an opus model id ($25/M output)", () => {
-		const c = estimateCostUsd(usage({ model: "claude-opus-4-8", totalOutputTokens: 1_000_000 }), DURING_INTRO);
+		const c = estimateCostUsd(
+			usage({ model: "claude-opus-4-8", totalOutputTokens: 1_000_000 }),
+			DURING_INTRO,
+		);
 		expect(c).toBeCloseTo(25, 6);
 	});
 
@@ -62,7 +65,10 @@ describe("estimateCostUsd", () => {
 	});
 
 	it("falls back to Sonnet rates for an unknown or null model", () => {
-		const unknown = estimateCostUsd(usage({ model: "who-knows", totalOutputTokens: 1_000_000 }), DURING_INTRO);
+		const unknown = estimateCostUsd(
+			usage({ model: "who-knows", totalOutputTokens: 1_000_000 }),
+			DURING_INTRO,
+		);
 		const nul = estimateCostUsd(usage({ model: null, totalOutputTokens: 1_000_000 }), DURING_INTRO);
 		expect(unknown).toBeCloseTo(10, 6);
 		expect(nul).toBeCloseTo(10, 6);
