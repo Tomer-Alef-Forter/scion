@@ -14,22 +14,26 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Scion runs under Node. We install with npm (not Bun) in CI because the
       # native deps (node-pty, better-sqlite3) must compile against the Node
       # ABI — npm's bundled node-gyp does this cleanly on the runner, whereas
       # Bun's install shells out to a node-gyp that breaks here. Bun is still
       # set up because the package.json scripts invoke `bun run`.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
       - uses: oven-sh/setup-bun@v2
 
-      # --legacy-peer-deps reproduces Bun's (the dev install tool's) resolution:
-      # web pins @xterm/xterm@6.1.0-beta.220 while @xterm/addon-webgl peer-wants
-      # beta.221. Bun installs it and the app works; npm would otherwise refuse.
-      # TODO: align the @xterm/* beta versions in web/package.json and drop this.
+      # --legacy-peer-deps reproduces Bun's (the dev install tool's) resolution.
+      # The @xterm/addon-webgl beta line has an unsatisfiable peer skew: every
+      # version peer-demands the NEXT @xterm/xterm beta (0.20.0-beta.220 wants
+      # xterm ^beta.221, .221 wants ^beta.222, …), so no aligned beta pair
+      # exists and npm strict resolution can't be satisfied by version-bumping.
+      # Bun installs it fine and the terminal works. The real fix is migrating
+      # off the beta channel to stable @xterm/xterm@6 (a separate, tested change
+      # touching the terminal renderer), not dropping this flag.
       - name: Install dependencies (root)
         run: npm install --no-audit --no-fund --legacy-peer-deps
 

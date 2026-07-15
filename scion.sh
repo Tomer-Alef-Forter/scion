@@ -13,6 +13,10 @@
 #   scion.sh web        #   "
 #   scion.sh prod       # web UI, built once + served on a single port (5177)
 #   scion.sh tui        # terminal UI
+#   scion.sh supervised # web UI (dev) in crash-survivable mode: a durable PTY
+#                       # host owns the agents so they survive a daemon crash.
+#                       # Start this on a fresh machine state (no plain daemon
+#                       # already running); see docs/RESTARTING.md.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,8 +55,26 @@ case "$MODE" in
 		echo "scion: starting terminal UI"
 		exec bun run start
 		;;
+	supervised | web:supervised)
+		free_port 5173
+		free_port 5177
+		# Bring up the crash-survivable daemon pair (durable PTY host + a proxy
+		# daemon on the standard socket) unless a supervisor is already running.
+		# The front end below then attaches to that proxy daemon instead of
+		# auto-spawning a plain one.
+		if pgrep -f "src/daemon/supervisor.ts" >/dev/null 2>&1; then
+			echo "scion: supervisor already running"
+		else
+			echo "scion: starting supervisor (crash-survivable daemon)"
+			mkdir -p "$HOME/.scion"
+			nohup bun run supervisor >"$HOME/.scion/supervisor.console.log" 2>&1 &
+			sleep 2
+		fi
+		echo "scion: starting web UI (dev, supervised) — open http://localhost:5173"
+		exec bun run web:dev
+		;;
 	*)
-		echo "usage: scion.sh [web|prod|tui]" >&2
+		echo "usage: scion.sh [web|prod|tui|supervised]" >&2
 		exit 1
 		;;
 esac
