@@ -185,9 +185,7 @@ async function main() {
 	const geminiCreated = await geminiWsRes.json();
 	const listWithGeminiRes = await app.request(`/api/projects/${project.id}/workspaces`);
 	const listWithGemini = await listWithGeminiRes.json();
-	const geminiRow = listWithGemini.find(
-		(w: { id: string }) => w.id === geminiCreated.workspace.id,
-	);
+	const geminiRow = listWithGemini.find((w: { id: string }) => w.id === geminiCreated.workspace.id);
 	check(
 		"non-Claude agent with a live session reports 'working', not 'starting'",
 		geminiRow?.status === "working",
@@ -232,9 +230,7 @@ async function main() {
 			tree.some((f: { path: string }) => f.path === "README.md"),
 	);
 
-	const fileRes = await app.request(
-		`/api/workspaces/${created.workspace.id}/file?path=README.md`,
-	);
+	const fileRes = await app.request(`/api/workspaces/${created.workspace.id}/file?path=README.md`);
 	const fileContents = await fileRes.text();
 	check(
 		"GET /api/workspaces/:id/file returns README.md contents",
@@ -263,8 +259,8 @@ async function main() {
 	check(
 		"POST /api/workspaces/:id/rename updates the name",
 		renameRes.status === 200 &&
-			workspacesAfterRename.find((w: { id: string }) => w.id === created.workspace.id)
-				?.name === "renamed-workspace",
+			workspacesAfterRename.find((w: { id: string }) => w.id === created.workspace.id)?.name ===
+				"renamed-workspace",
 	);
 
 	const renameEmptyRes = await app.request(`/api/workspaces/${created.workspace.id}/rename`, {
@@ -348,10 +344,9 @@ async function main() {
 		);
 	}
 
-	const deleteRes = await app.request(
-		`/api/workspaces/${created.workspace.id}?deleteBranch=true`,
-		{ method: "DELETE" },
-	);
+	const deleteRes = await app.request(`/api/workspaces/${created.workspace.id}?deleteBranch=true`, {
+		method: "DELETE",
+	});
 	check("DELETE /api/workspaces/:id -> ok", deleteRes.status === 200);
 
 	// ---- orphaned worktrees (run-isolated.ts gives this process its own
@@ -481,7 +476,10 @@ async function main() {
 	ws1.close();
 	await sleep(200);
 	const sessionStillAlive = getSession(terminalId);
-	check("closing a WS does not kill the PTY session", !!sessionStillAlive && !sessionStillAlive.exited);
+	check(
+		"closing a WS does not kill the PTY session",
+		!!sessionStillAlive && !sessionStillAlive.exited,
+	);
 	ws2.close();
 
 	// ---- exit message shape: real client reads `exitCode`, not `code` ----
@@ -532,14 +530,12 @@ async function main() {
 		wsEvents.addEventListener("open", () => resolve());
 		wsEvents.addEventListener("error", () => reject(new Error("wsEvents failed to open")));
 	});
-	const eventPromise = new Promise<{ type: string; workspaceId: string } | null>(
-		(resolve) => {
-			wsEvents.addEventListener("message", (evt: MessageEvent) => {
-				if (typeof evt.data === "string") resolve(JSON.parse(evt.data));
-			});
-			setTimeout(() => resolve(null), 1000);
-		},
-	);
+	const eventPromise = new Promise<{ type: string; workspaceId: string } | null>((resolve) => {
+		wsEvents.addEventListener("message", (evt: MessageEvent) => {
+			if (typeof evt.data === "string") resolve(JSON.parse(evt.data));
+		});
+		setTimeout(() => resolve(null), 1000);
+	});
 	// recordEvent's binding insert has a FK on terminalSessions.id — seed one,
 	// matching how store.createWorkspace does it for real terminals.
 	db.insert(terminalSessions)

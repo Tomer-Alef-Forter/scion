@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
-import React, { useState } from "react";
+import { useState } from "react";
 import type { Store } from "../../store/projects.ts";
 
 interface Props {
@@ -38,8 +38,8 @@ export function CreateWorkspace({ store, projectId, onDone }: Props) {
 				New workspace
 			</Text>
 			<Text dimColor>
-				Describe the task for Claude. A worktree + branch are created and the
-				agent launches with this prompt.
+				Describe the task for Claude. A worktree + branch are created and the agent launches with
+				this prompt.
 			</Text>
 			<Box marginTop={1}>
 				<Text>Task: </Text>

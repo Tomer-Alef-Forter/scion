@@ -48,7 +48,9 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 	const clean = out.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\x1b\][^\x07]*\x07/g, "");
 	console.log("\n\n===== ERROR SCAN =====");
-	const hit = clean.split("\n").filter((l) => /error|Error|ERROR|not a git|throw|Exception/.test(l));
+	const hit = clean
+		.split("\n")
+		.filter((l) => /error|Error|ERROR|not a git|throw|Exception/.test(l));
 	console.log(hit.length ? hit.join("\n") : "(no error lines found)");
 	execFileSync("rm", ["-rf", home, repo]);
 	process.exit(0);

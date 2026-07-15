@@ -34,9 +34,13 @@ describe("buildAgentArgv: claude", () => {
 	});
 
 	it("inserts --resume before the prompt when resuming a session", () => {
-		expect(
-			buildAgentArgv("claude", { prompt: "continue", resumeSessionId: "sess-123" }),
-		).toEqual(["--permission-mode", "auto", "--resume", "sess-123", "continue"]);
+		expect(buildAgentArgv("claude", { prompt: "continue", resumeSessionId: "sess-123" })).toEqual([
+			"--permission-mode",
+			"auto",
+			"--resume",
+			"sess-123",
+			"continue",
+		]);
 	});
 
 	it("omits --resume when resumeSessionId is null/absent", () => {
@@ -47,10 +51,7 @@ describe("buildAgentArgv: claude", () => {
 	});
 
 	it("does not append a trailing positional for an empty/whitespace-only prompt", () => {
-		expect(buildAgentArgv("claude", { prompt: "   " })).toEqual([
-			"--permission-mode",
-			"auto",
-		]);
+		expect(buildAgentArgv("claude", { prompt: "   " })).toEqual(["--permission-mode", "auto"]);
 	});
 
 	it("buildClaudeArgv is equivalent to buildAgentArgv('claude', ...)", () => {
@@ -90,9 +91,7 @@ describe("buildAgentArgv: codex", () => {
 	});
 
 	it("omits the trailing positional with no prompt", () => {
-		expect(buildAgentArgv("codex", {})).toEqual([
-			"--dangerously-bypass-approvals-and-sandbox",
-		]);
+		expect(buildAgentArgv("codex", {})).toEqual(["--dangerously-bypass-approvals-and-sandbox"]);
 	});
 });
 
@@ -134,11 +133,7 @@ describe("buildAgentArgv: copilot", () => {
 	});
 
 	it("passes the prompt via -i", () => {
-		expect(buildAgentArgv("copilot", { prompt: "hello" })).toEqual([
-			"--allow-all",
-			"-i",
-			"hello",
-		]);
+		expect(buildAgentArgv("copilot", { prompt: "hello" })).toEqual(["--allow-all", "-i", "hello"]);
 	});
 });
 

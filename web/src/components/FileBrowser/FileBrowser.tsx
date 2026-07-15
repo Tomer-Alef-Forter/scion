@@ -93,7 +93,10 @@ function TreeItem({
 				style={{ paddingLeft: `${depth * 14 + 6}px` }}
 			>
 				<ChevronRight
-					className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", expanded && "rotate-90")}
+					className={cn(
+						"size-3.5 shrink-0 text-muted-foreground transition-transform",
+						expanded && "rotate-90",
+					)}
 				/>
 				<Folder className="size-3.5 shrink-0 text-muted-foreground" />
 				<span className="truncate">{node.name}</span>

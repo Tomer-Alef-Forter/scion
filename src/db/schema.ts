@@ -1,13 +1,7 @@
 // Drizzle schema for Scion's local SQLite DB: projects, their workspaces,
 // terminal sessions, and the agent-status bindings derived from hook events.
 // Deliberately no cloud-sync tables — everything here is local-only.
-import {
-	index,
-	integer,
-	sqliteTable,
-	text,
-	uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const projects = sqliteTable(
 	"projects",
@@ -44,10 +38,7 @@ export const workspaces = sqliteTable(
 		// Captured from the global default at creation time — a workspace keeps
 		// using the agent it was created with (resume relaunches the same CLI),
 		// independent of later settings changes.
-		agentType: text("agent_type")
-			.$type<AgentType>()
-			.notNull()
-			.default("claude"),
+		agentType: text("agent_type").$type<AgentType>().notNull().default("claude"),
 		createdAt: integer("created_at")
 			.notNull()
 			.$defaultFn(() => Date.now()),
@@ -68,9 +59,7 @@ export const terminalSessions = sqliteTable(
 			.$defaultFn(() => Date.now()),
 		endedAt: integer("ended_at"),
 	},
-	(table) => [
-		index("terminal_sessions_workspace_id_idx").on(table.workspaceId),
-	],
+	(table) => [index("terminal_sessions_workspace_id_idx").on(table.workspaceId)],
 );
 
 export const terminalAgentBindings = sqliteTable(
@@ -94,9 +83,7 @@ export const terminalAgentBindings = sqliteTable(
 		// (web/src/lib/pricing.ts). See docs/WEB_GUIDE.md §12.
 		totalInputTokens: integer("total_input_tokens").notNull().default(0),
 		totalOutputTokens: integer("total_output_tokens").notNull().default(0),
-		totalCacheCreationTokens: integer("total_cache_creation_tokens")
-			.notNull()
-			.default(0),
+		totalCacheCreationTokens: integer("total_cache_creation_tokens").notNull().default(0),
 		totalCacheReadTokens: integer("total_cache_read_tokens").notNull().default(0),
 		// Count of assistant messages seen in the transcript (a rough proxy for
 		// "turns" — a single user prompt can produce several, one per tool-use
@@ -107,9 +94,7 @@ export const terminalAgentBindings = sqliteTable(
 		// "claude-sonnet-5"); the UI picks the price-table row from this.
 		usageModel: text("usage_model"),
 	},
-	(table) => [
-		index("terminal_agent_bindings_workspace_id_idx").on(table.workspaceId),
-	],
+	(table) => [index("terminal_agent_bindings_workspace_id_idx").on(table.workspaceId)],
 );
 
 export type AgentType =

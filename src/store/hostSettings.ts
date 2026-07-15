@@ -14,11 +14,7 @@ export interface HostSettings {
 const SETTINGS_ROW_ID = 1;
 
 export function getHostSettings(db: Db): HostSettings {
-	const row = db
-		.select()
-		.from(hostSettings)
-		.where(eq(hostSettings.id, SETTINGS_ROW_ID))
-		.get();
+	const row = db.select().from(hostSettings).where(eq(hostSettings.id, SETTINGS_ROW_ID)).get();
 	if (row) {
 		return {
 			defaultAgent: row.defaultAgent,
@@ -38,10 +34,7 @@ export function getHostSettings(db: Db): HostSettings {
 	return defaults;
 }
 
-export function updateHostSettings(
-	db: Db,
-	patch: Partial<HostSettings>,
-): HostSettings {
+export function updateHostSettings(db: Db, patch: Partial<HostSettings>): HostSettings {
 	const current = getHostSettings(db);
 	const next = { ...current, ...patch };
 	db.update(hostSettings).set(next).where(eq(hostSettings.id, SETTINGS_ROW_ID)).run();

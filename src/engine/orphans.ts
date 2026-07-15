@@ -47,9 +47,7 @@ function findWorktreeRoots(dir: string, out: string[]): void {
 /** Every real worktree checkout under `worktrees/<projectId>/**` with no
  * matching workspace row — found by walking to arbitrary depth rather than
  * assuming a fixed structure, since branch names may contain "/". */
-export function findOrphanedWorktrees(
-	knownWorktreePaths: Set<string>,
-): OrphanedWorktree[] {
+export function findOrphanedWorktrees(knownWorktreePaths: Set<string>): OrphanedWorktree[] {
 	const orphans: OrphanedWorktree[] = [];
 	for (const projectId of dirs(WORKTREES_ROOT)) {
 		const roots: string[] = [];

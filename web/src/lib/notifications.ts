@@ -50,7 +50,8 @@ export function notifyAgentAttention(ws: AttentionWorkspace, onOpen: () => void)
 	// pill, tab title badge) cover it; an OS notification would just be noise.
 	if (document.hasFocus()) return;
 
-	const title = ws.status === "waiting" ? `${ws.name} needs input` : `${ws.name} is ready to review`;
+	const title =
+		ws.status === "waiting" ? `${ws.name} needs input` : `${ws.name} is ready to review`;
 	const body =
 		ws.status === "waiting"
 			? "The agent is waiting for your input."

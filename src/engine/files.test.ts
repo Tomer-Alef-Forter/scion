@@ -30,9 +30,7 @@ describe("readWorktreeFile path-traversal guard", () => {
 	});
 
 	it("reads a nested relative file inside the worktree", async () => {
-		await expect(readWorktreeFile(worktreePath, "sub/nested.txt")).resolves.toBe(
-			"nested content",
-		);
+		await expect(readWorktreeFile(worktreePath, "sub/nested.txt")).resolves.toBe("nested content");
 	});
 
 	it("rejects an absolute path", async () => {
@@ -48,9 +46,9 @@ describe("readWorktreeFile path-traversal guard", () => {
 	});
 
 	it("rejects a .. traversal buried inside a deeper relative path", async () => {
-		await expect(
-			readWorktreeFile(worktreePath, "sub/../../secret-sibling.txt"),
-		).rejects.toThrow("Path traversal is not allowed");
+		await expect(readWorktreeFile(worktreePath, "sub/../../secret-sibling.txt")).rejects.toThrow(
+			"Path traversal is not allowed",
+		);
 	});
 
 	it("rejects a .. traversal disguised with a trailing legitimate-looking segment", async () => {

@@ -116,9 +116,7 @@ function readExistingSettings(): Settings | null {
 		return null;
 	}
 	if (!isObj(parsed)) {
-		console.warn(
-			"[setup] ~/.claude/settings.json is not a JSON object; skipping hook merge",
-		);
+		console.warn("[setup] ~/.claude/settings.json is not a JSON object; skipping hook merge");
 		return null;
 	}
 	return parsed as Settings;

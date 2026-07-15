@@ -165,8 +165,7 @@ export const api = {
 			method: "POST",
 			body: JSON.stringify({ repoPath }),
 		}),
-	removeProject: (id: string) =>
-		request<{ ok: true }>(`/projects/${id}`, { method: "DELETE" }),
+	removeProject: (id: string) => request<{ ok: true }>(`/projects/${id}`, { method: "DELETE" }),
 	// setupCommand runs standalone in a new workspace's worktree, before the
 	// agent launches. Empty string clears it (server normalizes to null).
 	updateProjectSetupCommand: (id: string, setupCommand: string) =>
@@ -216,8 +215,7 @@ export const api = {
 			method: "DELETE",
 		}),
 	getDiff: (id: string) => requestText(`/workspaces/${id}/diff`),
-	merge: (id: string) =>
-		request<MergeResult>(`/workspaces/${id}/merge`, { method: "POST" }),
+	merge: (id: string) => request<MergeResult>(`/workspaces/${id}/merge`, { method: "POST" }),
 	// Pushes the branch and opens a GitHub PR via `gh` (requires it installed
 	// + authenticated). Falls back to an existing PR's URL on a repeat call.
 	createPullRequest: (id: string) =>
@@ -227,13 +225,9 @@ export const api = {
 	// cached (~30s) so `force` (the manual refresh button) is the only path
 	// that's guaranteed to hit `gh` again.
 	getPullRequestStatus: (id: string, force = false) =>
-		request<PullRequestStatus | null>(
-			`/workspaces/${id}/pr-status${force ? "?force=true" : ""}`,
-		),
-	openInEditor: (id: string) =>
-		request<{ ok: true }>(`/workspaces/${id}/open`, { method: "POST" }),
-	markSeen: (id: string) =>
-		request<{ ok: true }>(`/workspaces/${id}/seen`, { method: "POST" }),
+		request<PullRequestStatus | null>(`/workspaces/${id}/pr-status${force ? "?force=true" : ""}`),
+	openInEditor: (id: string) => request<{ ok: true }>(`/workspaces/${id}/open`, { method: "POST" }),
+	markSeen: (id: string) => request<{ ok: true }>(`/workspaces/${id}/seen`, { method: "POST" }),
 	getTree: (id: string) => request<FileEntry[]>(`/workspaces/${id}/tree`),
 	getFile: (id: string, path: string) =>
 		requestText(`/workspaces/${id}/file?path=${encodeURIComponent(path)}`),

@@ -16,11 +16,15 @@ import type { PtyBackend } from "./ptyBackend.ts";
  * covers CSI/OSC escapes; the rest is normalized here.
  */
 export function sanitizePrompt(prompt: string): string {
-	return stripAnsi(prompt)
-		.replace(/\r\n?/g, "\n")
-		// biome-ignore lint: stripping remaining non-printable control chars intentionally
-		.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "")
-		.replaceAll("\t", "    ");
+	return (
+		stripAnsi(prompt)
+			.replace(/\r\n?/g, "\n")
+			// Strip remaining non-printable control chars intentionally (the
+			// noControlCharactersInRegex lint rule is disabled in biome.json —
+			// sanitizing PTY/agent output is core to this tool).
+			.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "")
+			.replaceAll("\t", "    ")
+	);
 }
 
 interface AgentArgvArgs {

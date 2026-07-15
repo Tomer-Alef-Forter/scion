@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { Box, Text, useInput } from "ink";
 import TextInput from "ink-text-input";
-import React, { useReducer, useState } from "react";
+import { useReducer, useState } from "react";
 import type { Store } from "../../store/projects.ts";
 
 interface Props {
@@ -85,9 +85,7 @@ export function Projects({ store, onOpen, onQuit }: Props) {
 			)}
 
 			<Box marginTop={1}>
-				<Text dimColor>
-					↑/↓ select · enter open · a add · x remove · q quit
-				</Text>
+				<Text dimColor>↑/↓ select · enter open · a add · x remove · q quit</Text>
 			</Box>
 		</Box>
 	);

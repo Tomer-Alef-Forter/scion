@@ -1,0 +1,53 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": [
+			"src/**/*.ts",
+			"src/**/*.tsx",
+			"scripts/**/*.ts",
+			"web/src/**/*.ts",
+			"web/src/**/*.tsx",
+			"!**/dist",
+			"!**/node_modules"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 100
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"suspicious": {
+				"noControlCharactersInRegex": "off"
+			},
+			"correctness": {
+				"useExhaustiveDependencies": "warn"
+			},
+			"style": {
+				"noNonNullAssertion": "warn"
+			},
+			"a11y": {
+				"noAutofocus": "warn",
+				"noLabelWithoutControl": "warn",
+				"useKeyWithClickEvents": "warn",
+				"noStaticElementInteractions": "warn"
+			}
+		}
+	},
+	"assist": {
+		"enabled": false
+	}
+}

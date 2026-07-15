@@ -7,10 +7,7 @@ import { WORKTREES_ROOT } from "../config.ts";
 import { createUserSimpleGit } from "./gitClient.ts";
 
 /** `<WORKTREES_ROOT>/<projectId>/<branch>`, refusing to resolve outside its project dir. */
-export function safeResolveWorktreePath(
-	projectId: string,
-	branchName: string,
-): string {
+export function safeResolveWorktreePath(projectId: string, branchName: string): string {
 	const projectRoot = resolve(WORKTREES_ROOT, projectId);
 	const worktreePath = resolve(projectRoot, branchName);
 	const rel = relative(projectRoot, worktreePath);
@@ -157,9 +154,7 @@ export async function removeWorktree(args: {
 	// --force twice: once to discard uncommitted changes in the worktree,
 	// again because git also refuses to remove a worktree it can't confirm
 	// is clean (e.g. if the directory was already partially deleted).
-	await git
-		.raw(["worktree", "remove", "--force", "--force", args.worktreePath])
-		.catch(() => {});
+	await git.raw(["worktree", "remove", "--force", "--force", args.worktreePath]).catch(() => {});
 	await git.raw(["worktree", "prune"]).catch(() => {});
 	pruneEmptyParents(args.worktreePath);
 	if (args.deleteBranch) {

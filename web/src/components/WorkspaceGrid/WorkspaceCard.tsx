@@ -70,12 +70,7 @@ interface WorkspaceCardProps {
 	onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function WorkspaceCardImpl({
-	workspace,
-	selected,
-	onClick,
-	onContextMenu,
-}: WorkspaceCardProps) {
+function WorkspaceCardImpl({ workspace, selected, onClick, onContextMenu }: WorkspaceCardProps) {
 	return (
 		<button
 			type="button"

@@ -77,7 +77,11 @@ async function waitForSocket(sockPath: string, label: string): Promise<void> {
 	}
 }
 
-function spawnChild(entry: string, logPath: string, extraEnv: Record<string, string>): ChildProcess {
+function spawnChild(
+	entry: string,
+	logPath: string,
+	extraEnv: Record<string, string>,
+): ChildProcess {
 	const logFd = openSync(logPath, "a");
 	try {
 		return spawn(TSX_BIN, [entry], {

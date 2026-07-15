@@ -65,10 +65,7 @@ export function listSessions(workspaceId?: string): PtySession[] {
 }
 
 /** Env injected into every launched PTY so Claude's hooks report back to us. */
-function buildTerminalEnv(
-	terminalId: string,
-	workspaceId: string,
-): Record<string, string> {
+function buildTerminalEnv(terminalId: string, workspaceId: string): Record<string, string> {
 	const base: Record<string, string> = {};
 	for (const [k, v] of Object.entries(process.env)) {
 		if (typeof v === "string") base[k] = v;

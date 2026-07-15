@@ -32,11 +32,7 @@ import {
 import type { PtyBackend } from "../engine/ptyBackend.ts";
 import { runSetupCommand } from "../engine/setupCommand.ts";
 import type { StatusStore } from "../engine/status.ts";
-import {
-	addWorktree,
-	removeWorktree,
-	resolveDefaultBranch,
-} from "../engine/worktrees.ts";
+import { addWorktree, removeWorktree, resolveDefaultBranch } from "../engine/worktrees.ts";
 import { trustWorktree } from "../setup/trustWorktree.ts";
 import { type HostSettings, getHostSettings, updateHostSettings } from "./hostSettings.ts";
 
@@ -98,10 +94,7 @@ export interface Store {
 	 * prior Claude conversation via `--resume <session_id>` when one was
 	 * captured from the lifecycle hook.
 	 */
-	resumeWorkspace(args: {
-		workspaceId: string;
-		prompt?: string;
-	}): Promise<{ terminalId: string }>;
+	resumeWorkspace(args: { workspaceId: string; prompt?: string }): Promise<{ terminalId: string }>;
 	/**
 	 * Removes the worktree (and optionally the branch). Refuses if the
 	 * worktree has uncommitted changes unless `force` is set — `git worktree
@@ -115,7 +108,11 @@ export interface Store {
 	getSettings(): HostSettings;
 	updateSettings(patch: Partial<HostSettings>): HostSettings;
 	listOrphanedWorktrees(): OrphanedWorktree[];
-	cleanupOrphanedWorktrees(): Promise<{ removed: number; failed: number; emptyDirsRemoved: number }>;
+	cleanupOrphanedWorktrees(): Promise<{
+		removed: number;
+		failed: number;
+		emptyDirsRemoved: number;
+	}>;
 }
 
 function titleFromPrompt(prompt: string, fallback: string): string {
@@ -188,8 +185,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 					prompt,
 				}),
 			]);
-			const setupWarning =
-				setupResult && !setupResult.ok ? setupResult.message : undefined;
+			const setupWarning = setupResult && !setupResult.ok ? setupResult.message : undefined;
 			db.insert(terminalSessions)
 				.values({
 					id: terminalId,
@@ -217,11 +213,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 	}
 
 	function getProjectOrThrow(projectId: string): Project {
-		const project = db
-			.select()
-			.from(projects)
-			.where(eq(projects.id, projectId))
-			.get();
+		const project = db.select().from(projects).where(eq(projects.id, projectId)).get();
 		if (!project) throw new Error("Project not found");
 		return project;
 	}
@@ -252,11 +244,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 			// Use the repo's top-level dir as the canonical path.
 			const top = (await git.revparse(["--show-toplevel"]).catch(() => repoPath)).trim();
 
-			const existing = db
-				.select()
-				.from(projects)
-				.where(eq(projects.repoPath, top))
-				.get();
+			const existing = db.select().from(projects).where(eq(projects.repoPath, top)).get();
 			if (existing) return existing;
 
 			const defaultBranch = await resolveDefaultBranch(top);
@@ -285,11 +273,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 		},
 
 		listWorkspaces(projectId) {
-			const rows = db
-				.select()
-				.from(workspaces)
-				.where(eq(workspaces.projectId, projectId))
-				.all();
+			const rows = db.select().from(workspaces).where(eq(workspaces.projectId, projectId)).all();
 			// Reconcile: drop rows whose worktree dir is gone.
 			const live: Workspace[] = [];
 			for (const row of rows) {
@@ -306,9 +290,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 			const project = getProjectOrThrow(projectId);
 
 			const existing = await listBranchNames(project.repoPath);
-			const candidate = prompt.trim()
-				? generateBranchName(prompt)
-				: generateFriendlyBranchName();
+			const candidate = prompt.trim() ? generateBranchName(prompt) : generateFriendlyBranchName();
 			const branch = deduplicateBranchName(candidate, existing);
 
 			// Captured now, not re-read later — a workspace keeps using the agent
@@ -338,15 +320,12 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 			const taken = await listBranchNames(project.repoPath);
 			const baseLabel = name?.trim() || titleFromPrompt(prompt, "");
 			const plans = agents.map((agentType, i) => {
-				const candidate = prompt.trim()
-					? generateBranchName(prompt)
-					: generateFriendlyBranchName();
+				const candidate = prompt.trim() ? generateBranchName(prompt) : generateFriendlyBranchName();
 				const branch = deduplicateBranchName(candidate, taken);
 				taken.push(branch);
 				// Distinguish otherwise-identical rows in the dashboard.
 				const label = baseLabel || branch;
-				const wsName =
-					agents.length > 1 ? `${label} · ${agentType} #${i + 1}` : label;
+				const wsName = agents.length > 1 ? `${label} · ${agentType} #${i + 1}` : label;
 				return { agentType, branch, name: wsName };
 			});
 
@@ -374,11 +353,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 		},
 
 		async resumeWorkspace({ workspaceId, prompt }) {
-			const workspace = db
-				.select()
-				.from(workspaces)
-				.where(eq(workspaces.id, workspaceId))
-				.get();
+			const workspace = db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).get();
 			if (!workspace) throw new Error("Workspace not found");
 
 			// Already has a live terminal — nothing to resume.
@@ -426,11 +401,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 		},
 
 		async deleteWorkspace({ workspaceId, deleteBranch, force }) {
-			const row = db
-				.select()
-				.from(workspaces)
-				.where(eq(workspaces.id, workspaceId))
-				.get();
+			const row = db.select().from(workspaces).where(eq(workspaces.id, workspaceId)).get();
 			if (!row) return;
 
 			if (!force && existsSync(row.worktreePath) && !(await isClean(row.worktreePath))) {
@@ -439,11 +410,7 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 				);
 			}
 
-			const project = db
-				.select()
-				.from(projects)
-				.where(eq(projects.id, row.projectId))
-				.get();
+			const project = db.select().from(projects).where(eq(projects.id, row.projectId)).get();
 
 			// Kill any live PTYs for this workspace.
 			for (const session of db
@@ -479,14 +446,22 @@ export function createStore(db: Db, status: StatusStore, backend: PtyBackend): S
 
 		listOrphanedWorktrees() {
 			const knownPaths = new Set(
-				db.select().from(workspaces).all().map((w) => w.worktreePath),
+				db
+					.select()
+					.from(workspaces)
+					.all()
+					.map((w) => w.worktreePath),
 			);
 			return findOrphanedWorktrees(knownPaths);
 		},
 
 		async cleanupOrphanedWorktrees() {
 			const knownPaths = new Set(
-				db.select().from(workspaces).all().map((w) => w.worktreePath),
+				db
+					.select()
+					.from(workspaces)
+					.all()
+					.map((w) => w.worktreePath),
 			);
 			const orphans = findOrphanedWorktrees(knownPaths);
 			const allProjects = db.select().from(projects).all();

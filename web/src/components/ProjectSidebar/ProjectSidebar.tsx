@@ -127,9 +127,7 @@ export function ProjectSidebar({
 									)}
 								>
 									<div className="truncate font-medium">{p.name}</div>
-									<div className="truncate text-xs text-muted-foreground">
-										{p.repoPath}
-									</div>
+									<div className="truncate text-xs text-muted-foreground">{p.repoPath}</div>
 									{p.setupCommand && (
 										<div className="truncate text-[10px] text-muted-foreground/70">
 											⚙ {p.setupCommand}
@@ -161,9 +159,7 @@ export function ProjectSidebar({
 						),
 					)}
 					{projects.length === 0 && (
-						<li className="px-2.5 py-2 text-xs text-muted-foreground">
-							No projects yet.
-						</li>
+						<li className="px-2.5 py-2 text-xs text-muted-foreground">No projects yet.</li>
 					)}
 				</ul>
 			</div>

@@ -40,6 +40,9 @@ jobs:
       - name: Preflight (doctor)
         run: bun run doctor
 
+      - name: Lint + format check (Biome)
+        run: bun run lint
+
       - name: Typecheck (root)
         run: bun run typecheck
 

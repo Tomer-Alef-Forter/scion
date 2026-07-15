@@ -61,9 +61,7 @@ export function DiffPane({ workspaceId }: DiffPaneProps) {
 		return <div className="p-4 text-sm text-muted-foreground">Loading diff…</div>;
 	}
 	if (files.length === 0) {
-		return (
-			<div className="p-4 text-sm text-muted-foreground">No changes vs base.</div>
-		);
+		return <div className="p-4 text-sm text-muted-foreground">No changes vs base.</div>;
 	}
 
 	const diffOptions = {
@@ -76,11 +74,7 @@ export function DiffPane({ workspaceId }: DiffPaneProps) {
 	return (
 		<div className="h-full overflow-auto divide-y divide-border">
 			{files.map((fileDiff, i) => (
-				<CollapsibleFileDiff
-					key={fileDiff.name || i}
-					fileDiff={fileDiff}
-					options={diffOptions}
-				/>
+				<CollapsibleFileDiff key={fileDiff.name || i} fileDiff={fileDiff} options={diffOptions} />
 			))}
 		</div>
 	);

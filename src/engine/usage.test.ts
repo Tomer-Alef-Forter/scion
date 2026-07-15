@@ -10,7 +10,11 @@ function transcript(lines: unknown[]): string {
 	return lines.map((l) => JSON.stringify(l)).join("\n");
 }
 
-function assistantMsg(usage: Record<string, number>, model?: string, extra?: Record<string, unknown>) {
+function assistantMsg(
+	usage: Record<string, number>,
+	model?: string,
+	extra?: Record<string, unknown>,
+) {
 	return {
 		type: "assistant",
 		...extra,
@@ -38,11 +42,21 @@ describe("parseTranscriptUsage", () => {
 			"t.jsonl",
 			transcript([
 				assistantMsg(
-					{ input_tokens: 10, output_tokens: 100, cache_creation_input_tokens: 5, cache_read_input_tokens: 1000 },
+					{
+						input_tokens: 10,
+						output_tokens: 100,
+						cache_creation_input_tokens: 5,
+						cache_read_input_tokens: 1000,
+					},
 					"claude-sonnet-5",
 				),
 				assistantMsg(
-					{ input_tokens: 20, output_tokens: 200, cache_creation_input_tokens: 7, cache_read_input_tokens: 2000 },
+					{
+						input_tokens: 20,
+						output_tokens: 200,
+						cache_creation_input_tokens: 7,
+						cache_read_input_tokens: 2000,
+					},
 					"claude-sonnet-5",
 				),
 			]),
@@ -73,7 +87,9 @@ describe("parseTranscriptUsage", () => {
 			"t.jsonl",
 			transcript([
 				assistantMsg({ input_tokens: 10, output_tokens: 10 }, "claude-sonnet-5"),
-				assistantMsg({ input_tokens: 999, output_tokens: 999 }, "claude-sonnet-5", { isSidechain: true }),
+				assistantMsg({ input_tokens: 999, output_tokens: 999 }, "claude-sonnet-5", {
+					isSidechain: true,
+				}),
 			]),
 		);
 		const r = parseTranscriptUsage(p);
@@ -115,7 +131,10 @@ describe("parseTranscriptUsage", () => {
 	});
 
 	it("leaves model null when no message named one", async () => {
-		const p = await write("t.jsonl", transcript([assistantMsg({ input_tokens: 1, output_tokens: 1 })]));
+		const p = await write(
+			"t.jsonl",
+			transcript([assistantMsg({ input_tokens: 1, output_tokens: 1 })]),
+		);
 		expect(parseTranscriptUsage(p)?.model).toBeNull();
 	});
 });

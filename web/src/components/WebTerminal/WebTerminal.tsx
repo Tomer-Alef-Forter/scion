@@ -69,9 +69,13 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 	const [state, setState] = useState<ConnectionState>("connecting");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-	useImperativeHandle(ref, () => ({
-		focus: () => terminalRef.current?.focus(),
-	}), []);
+	useImperativeHandle(
+		ref,
+		() => ({
+			focus: () => terminalRef.current?.focus(),
+		}),
+		[],
+	);
 
 	useEffect(() => {
 		const container = containerRef.current;
@@ -208,9 +212,7 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 							sendResize();
 							return;
 						case "exit":
-							terminal.write(
-								`\r\n\x1b[33m[process exited code=${message.exitCode}]\x1b[0m\r\n`,
-							);
+							terminal.write(`\r\n\x1b[33m[process exited code=${message.exitCode}]\x1b[0m\r\n`);
 							setState("exited");
 							return;
 						case "error":
@@ -270,7 +272,7 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 								? "Reconnecting…"
 								: state === "exited"
 									? "Process exited."
-									: errorMessage ?? "Disconnected."}
+									: (errorMessage ?? "Disconnected.")}
 					</div>
 				)}
 			</div>

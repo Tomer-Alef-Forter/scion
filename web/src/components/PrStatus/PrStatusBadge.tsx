@@ -90,7 +90,8 @@ export function PrStatusBadge({ workspaceId }: PrStatusBadgeProps) {
 					PR_STATE_CLASS[status.state],
 				)}
 			>
-				PR #{status.number} · {status.isDraft && status.state === "OPEN" ? "Draft" : STATE_LABEL[status.state]}
+				PR #{status.number} ·{" "}
+				{status.isDraft && status.state === "OPEN" ? "Draft" : STATE_LABEL[status.state]}
 			</a>
 			{status.reviewDecision && (
 				<span className="shrink-0 text-muted-foreground">

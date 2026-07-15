@@ -11,9 +11,7 @@ import * as schema from "./schema.ts";
 
 export type Db = ReturnType<typeof createDb>;
 
-const MIGRATIONS_FOLDER = fileURLToPath(
-	new URL("../../drizzle", import.meta.url),
-);
+const MIGRATIONS_FOLDER = fileURLToPath(new URL("../../drizzle", import.meta.url));
 
 export function createDb(dbPath: string, opts: { reconcile?: boolean } = {}) {
 	mkdirSync(dirname(dbPath), { recursive: true });

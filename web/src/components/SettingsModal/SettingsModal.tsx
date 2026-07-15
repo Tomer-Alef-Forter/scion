@@ -92,13 +92,10 @@ export function SettingsModal({
 			<div className="w-full max-w-md rounded-lg border border-border bg-card p-4 text-card-foreground shadow-lg">
 				<h2 className="mb-1 text-sm font-semibold">Settings</h2>
 				<p className="mb-3 text-xs text-muted-foreground">
-					Defaults for new workspaces. Existing workspaces keep whatever they were
-					created with.
+					Defaults for new workspaces. Existing workspaces keep whatever they were created with.
 				</p>
 				<form onSubmit={handleSubmit}>
-					<label className="mb-1 block text-xs font-medium text-muted-foreground">
-						Agent
-					</label>
+					<label className="mb-1 block text-xs font-medium text-muted-foreground">Agent</label>
 					<select
 						value={defaultAgent}
 						onChange={(e) => setDefaultAgent(e.target.value as AgentType)}
@@ -112,8 +109,9 @@ export function SettingsModal({
 					</select>
 					{defaultAgent !== "claude" && (
 						<p className="mt-1 text-xs text-muted-foreground">
-							Only Claude Code reports live status via hooks — {AGENT_OPTIONS.find((o) => o.id === defaultAgent)?.label}{" "}
-							workspaces will just show "working" until the session ends.
+							Only Claude Code reports live status via hooks —{" "}
+							{AGENT_OPTIONS.find((o) => o.id === defaultAgent)?.label} workspaces will just show
+							"working" until the session ends.
 						</p>
 					)}
 

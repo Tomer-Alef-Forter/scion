@@ -27,9 +27,7 @@ export async function mergeBack(args: {
 	}
 
 	const git = createUserSimpleGit(args.repoPath);
-	const previous = (
-		await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")
-	).trim();
+	const previous = (await git.revparse(["--abbrev-ref", "HEAD"]).catch(() => "")).trim();
 
 	try {
 		await git.raw(["checkout", base]);
@@ -59,5 +57,5 @@ export async function mergeBack(args: {
 }
 
 function errMsg(err: unknown): string {
-	return err instanceof Error ? err.message.split("\n")[0] ?? err.message : String(err);
+	return err instanceof Error ? (err.message.split("\n")[0] ?? err.message) : String(err);
 }

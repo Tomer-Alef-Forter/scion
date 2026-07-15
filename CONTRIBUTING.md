@@ -57,6 +57,23 @@ bun run persistence-smoke     # PTY-survives-daemon-restart (supervisor mode)
 - A schema change **must** ship with its generated migration — run
   `bun run db:generate` and commit the result, or CI's drift check fails.
 
+## Linting & formatting
+
+[Biome](https://biomejs.dev) handles both:
+
+```bash
+bun run lint        # check formatting + lint (what CI runs; fails on errors)
+bun run lint:fix    # apply safe fixes (formatting + safe lint fixes)
+bun run format      # format only
+```
+
+CI fails on lint **errors**, not warnings. A set of rules is intentionally kept
+at `warn` in `biome.json` — accessibility rules and React
+`useExhaustiveDependencies` (fixing them can change UI/behavior, so they're
+surfaced but non-blocking) — plus `noControlCharactersInRegex` is `off` (the
+tool deliberately strips control chars from PTY/agent output). Chip away at the
+warnings when you touch nearby code; don't let new ones become errors.
+
 ## Architecture (where things live)
 
 | Path | What |
