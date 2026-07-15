@@ -64,8 +64,11 @@ function discoverHookUrl(): string {
 }
 
 async function waitFor(
+	// Generous default so a cold daemon auto-spawn (tsx + node-pty startup) on a
+	// slow/loaded CI runner doesn't flake this. Polling returns the instant the
+	// condition holds, so a high ceiling costs nothing when things are working.
 	fn: () => Promise<boolean> | boolean,
-	timeoutMs = 3000,
+	timeoutMs = 15000,
 	intervalMs = 50,
 ): Promise<boolean> {
 	const deadline = Date.now() + timeoutMs;
