@@ -97,6 +97,15 @@ export const terminalAgentBindings = sqliteTable(
 		totalCacheCreationTokens: integer("total_cache_creation_tokens")
 			.notNull()
 			.default(0),
+		// TTL breakdown of totalCacheCreationTokens — the two tiers cost
+		// different multiples of the input rate (see web/src/lib/pricing.ts), so
+		// pricing needs them split rather than just the combined total above.
+		totalCacheCreation5mTokens: integer("total_cache_creation_5m_tokens")
+			.notNull()
+			.default(0),
+		totalCacheCreation1hTokens: integer("total_cache_creation_1h_tokens")
+			.notNull()
+			.default(0),
 		totalCacheReadTokens: integer("total_cache_read_tokens").notNull().default(0),
 		// Count of assistant messages seen in the transcript (a rough proxy for
 		// "turns" — a single user prompt can produce several, one per tool-use

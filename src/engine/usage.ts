@@ -22,16 +22,25 @@ import { readFileSync, statSync } from "node:fs";
 export interface UsageTotals {
 	inputTokens: number;
 	outputTokens: number;
+	/** Total cache-write tokens (cacheCreation5mTokens + cacheCreation1hTokens);
+	 * kept for display purposes (e.g. total token counts). Use the two fields
+	 * below for pricing — the two TTL tiers cost different multiples. */
 	cacheCreationTokens: number;
+	/** Cache writes billed at the default 5-minute TTL rate. */
+	cacheCreation5mTokens: number;
+	/** Cache writes billed at the (pricier) 1-hour TTL rate. */
+	cacheCreation1hTokens: number;
 	cacheReadTokens: number;
-	/** Count of assistant messages in the transcript — a proxy for "turns":
-	 * one user prompt can still produce several of these across a tool-use
-	 * loop, so treat this as relative, not exact. */
+	/** Count of top-level (non-subagent) assistant messages — a proxy for
+	 * "turns": one user prompt can still produce several of these across a
+	 * tool-use loop, so treat this as relative, not exact. */
 	turnCount: number;
-	/** Model id from the most recent usage-bearing assistant message (e.g.
-	 * "claude-sonnet-5"). Drives the cost estimate in the UI; null if the
-	 * transcript never named one. A session is effectively single-model, so
-	 * one id is a fair basis for the whole session's estimate. */
+	/** Model id from the most recent top-level (non-subagent) assistant
+	 * message (e.g. "claude-sonnet-5"). Drives the cost estimate in the UI;
+	 * null if the transcript never named one. Subagents can run a different
+	 * model than the main conversation, but we price every token (including
+	 * subagent tokens counted below) at this single rate — a session is
+	 * treated as effectively single-model for estimation purposes. */
 	model: string | null;
 }
 
@@ -46,6 +55,13 @@ interface TranscriptUsageBlock {
 	output_tokens?: number;
 	cache_creation_input_tokens?: number;
 	cache_read_input_tokens?: number;
+	/** TTL breakdown of cache_creation_input_tokens, present on current
+	 * transcripts. Falls back to treating it all as 5-minute-TTL writes when
+	 * absent (older transcripts predate this field). */
+	cache_creation?: {
+		ephemeral_5m_input_tokens?: number;
+		ephemeral_1h_input_tokens?: number;
+	};
 }
 
 interface TranscriptLine {
@@ -56,11 +72,14 @@ interface TranscriptLine {
 
 /**
  * Parse a Claude Code transcript JSONL file and sum token usage across every
- * top-level assistant message (excludes `isSidechain` entries, which are
- * subagent turns embedded inline — those are a separate agent's usage, not
- * this session's). Returns null if the file can't be read or parsed at all;
- * malformed individual lines (the file is written async and can be mid-write
- * when a hook fires) are skipped rather than failing the whole parse.
+ * assistant message, including `isSidechain` entries (subagent turns embedded
+ * inline) — Claude Code's own session cost accounting includes subagent
+ * usage, so excluding it here made the estimate undercount whenever a Task/
+ * Agent tool ran. Sidechain entries still don't count toward `turnCount` or
+ * `model` (those describe the main conversation). Returns null if the file
+ * can't be read or parsed at all; malformed individual lines (the file is
+ * written async and can be mid-write when a hook fires) are skipped rather
+ * than failing the whole parse.
  */
 export function parseTranscriptUsage(transcriptPath: string): UsageTotals | null {
 	if (!transcriptPath) return null;
@@ -82,6 +101,8 @@ export function parseTranscriptUsage(transcriptPath: string): UsageTotals | null
 		inputTokens: 0,
 		outputTokens: 0,
 		cacheCreationTokens: 0,
+		cacheCreation5mTokens: 0,
+		cacheCreation1hTokens: 0,
 		cacheReadTokens: 0,
 		turnCount: 0,
 		model: null,
@@ -96,13 +117,24 @@ export function parseTranscriptUsage(transcriptPath: string): UsageTotals | null
 		} catch {
 			continue; // partial/corrupt line (e.g. transcript mid-write) — skip it
 		}
-		if (entry.type !== "assistant" || entry.isSidechain === true) continue;
+		if (entry.type !== "assistant") continue;
 		const usage = entry.message?.usage;
 		if (!usage) continue;
+
 		totals.inputTokens += usage.input_tokens ?? 0;
 		totals.outputTokens += usage.output_tokens ?? 0;
-		totals.cacheCreationTokens += usage.cache_creation_input_tokens ?? 0;
 		totals.cacheReadTokens += usage.cache_read_input_tokens ?? 0;
+
+		const cacheCreation = usage.cache_creation_input_tokens ?? 0;
+		totals.cacheCreationTokens += cacheCreation;
+		if (usage.cache_creation) {
+			totals.cacheCreation5mTokens += usage.cache_creation.ephemeral_5m_input_tokens ?? 0;
+			totals.cacheCreation1hTokens += usage.cache_creation.ephemeral_1h_input_tokens ?? 0;
+		} else {
+			totals.cacheCreation5mTokens += cacheCreation; // no TTL breakdown: assume default 5m tier
+		}
+
+		if (entry.isSidechain === true) continue; // subagent turn: tokens above count toward cost, but not toward turnCount/model
 		totals.turnCount += 1;
 		if (entry.message?.model) totals.model = entry.message.model;
 	}

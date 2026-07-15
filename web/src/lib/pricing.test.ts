@@ -7,6 +7,8 @@ function usage(over: Partial<SessionUsage>): SessionUsage {
 		totalInputTokens: 0,
 		totalOutputTokens: 0,
 		totalCacheCreationTokens: 0,
+		totalCacheCreation5mTokens: 0,
+		totalCacheCreation1hTokens: 0,
 		totalCacheReadTokens: 0,
 		turnCount: 1,
 		usageUpdatedAt: Date.now(),
@@ -33,12 +35,17 @@ describe("estimateCostUsd", () => {
 		expect(c).toBeCloseTo(15, 6);
 	});
 
-	it("prices cache reads at 0.1x input and cache writes at 1.25x input", () => {
+	it("prices cache reads at 0.1x input and 5m cache writes at 1.25x input", () => {
 		// Sonnet intro input rate = $2/M.
 		const reads = estimateCostUsd(usage({ totalCacheReadTokens: 1_000_000 }), DURING_INTRO);
 		expect(reads).toBeCloseTo(2 * 0.1, 6); // $0.20
-		const writes = estimateCostUsd(usage({ totalCacheCreationTokens: 1_000_000 }), DURING_INTRO);
+		const writes = estimateCostUsd(usage({ totalCacheCreation5mTokens: 1_000_000 }), DURING_INTRO);
 		expect(writes).toBeCloseTo(2 * 1.25, 6); // $2.50
+	});
+
+	it("prices 1h cache writes at 2x input, distinct from the 5m rate", () => {
+		const writes = estimateCostUsd(usage({ totalCacheCreation1hTokens: 1_000_000 }), DURING_INTRO);
+		expect(writes).toBeCloseTo(2 * 2.0, 6); // $4.00
 	});
 
 	it("applies Opus rates for an opus model id ($25/M output)", () => {
