@@ -140,10 +140,15 @@ export function NewWorkspaceModal({
 										}`}
 									>
 										{agent}
+										{agent !== "claude" ? " *" : ""}
 									</button>
 								);
 							})}
 						</div>
+						<p className="mt-1.5 text-[11px] text-muted-foreground">
+							* Experimental — launch flags come from the tool's docs, not a live install; only
+							Claude Code reports live status.
+						</p>
 						{isBatch && (
 							<p className="mt-2 text-xs text-muted-foreground">
 								Will create <span className="font-medium">{totalWorkspaces}</span> workspaces.

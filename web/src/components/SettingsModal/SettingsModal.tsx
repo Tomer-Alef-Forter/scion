@@ -8,14 +8,17 @@ import {
 	setNotificationsEnabled,
 } from "../../lib/notifications";
 
-const AGENT_OPTIONS: { id: AgentType; label: string }[] = [
+// Only Claude Code is verified against a live install and reports live status
+// via hooks. The rest are wired up from each tool's docs but unverified against
+// a real CLI — flagged experimental so expectations are honest.
+const AGENT_OPTIONS: { id: AgentType; label: string; experimental?: boolean }[] = [
 	{ id: "claude", label: "Claude Code" },
-	{ id: "gemini", label: "Gemini CLI" },
-	{ id: "codex", label: "Codex" },
-	{ id: "cursor-agent", label: "Cursor Agent" },
-	{ id: "droid", label: "Droid" },
-	{ id: "opencode", label: "OpenCode" },
-	{ id: "copilot", label: "GitHub Copilot" },
+	{ id: "gemini", label: "Gemini CLI", experimental: true },
+	{ id: "codex", label: "Codex", experimental: true },
+	{ id: "cursor-agent", label: "Cursor Agent", experimental: true },
+	{ id: "droid", label: "Droid", experimental: true },
+	{ id: "opencode", label: "OpenCode", experimental: true },
+	{ id: "copilot", label: "GitHub Copilot", experimental: true },
 ];
 
 const EDITOR_OPTIONS: { id: EditorType; label: string }[] = [
@@ -104,14 +107,16 @@ export function SettingsModal({
 						{AGENT_OPTIONS.map((o) => (
 							<option key={o.id} value={o.id}>
 								{o.label}
+								{o.experimental ? " (experimental)" : ""}
 							</option>
 						))}
 					</select>
 					{defaultAgent !== "claude" && (
 						<p className="mt-1 text-xs text-muted-foreground">
-							Only Claude Code reports live status via hooks —{" "}
-							{AGENT_OPTIONS.find((o) => o.id === defaultAgent)?.label} workspaces will just show
-							"working" until the session ends.
+							<span className="font-medium">Experimental.</span>{" "}
+							{AGENT_OPTIONS.find((o) => o.id === defaultAgent)?.label}'s launch flags are set from
+							its docs but not verified against a live install, and only Claude Code reports live
+							status via hooks — other agents just show "working" until the session ends.
 						</p>
 					)}
 
