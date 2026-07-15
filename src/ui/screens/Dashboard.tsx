@@ -60,6 +60,7 @@ export function Dashboard({
 	}, [status]);
 
 	// Recompute diff summaries off the render path.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on workspaces.length + project?.repoPath (not the whole workspaces array / project object) so it recomputes only when the set changes, not on every reference change.
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
@@ -73,13 +74,13 @@ export function Dashboard({
 		return () => {
 			cancelled = true;
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [workspaces.length, project?.repoPath]);
 
 	// Live session lookups now go through the daemon (a real round trip), so
 	// they're fetched off the render path on the same cadence as everything
 	// else above, and read back synchronously from this cache — same pattern
 	// as `summaries`.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally keyed on workspaces.length (not the whole workspaces array) so it refetches only when the set changes, not on every reference change.
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
@@ -92,7 +93,6 @@ export function Dashboard({
 		return () => {
 			cancelled = true;
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [tick, workspaces.length, backend]);
 
 	function statusFor(workspaceId: string): {

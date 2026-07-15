@@ -118,6 +118,7 @@ export function WorkspaceContextMenu({
 			) : (
 				<form onSubmit={submitRename} className="p-1">
 					<input
+						// biome-ignore lint/a11y/noAutofocus: modal/field opens specifically for immediate text entry; autofocus is the intended UX
 						autoFocus
 						value={name}
 						onChange={(e) => setName(e.target.value)}

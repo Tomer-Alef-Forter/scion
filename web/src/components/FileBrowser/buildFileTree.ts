@@ -13,8 +13,7 @@ export function buildFileTree(paths: string[]): TreeNode[] {
 		const segments = filePath.split("/");
 		let level = root;
 		let accumulated = "";
-		for (let i = 0; i < segments.length; i++) {
-			const name = segments[i]!;
+		for (const [i, name] of segments.entries()) {
 			accumulated = accumulated ? `${accumulated}/${name}` : name;
 			const isFile = i === segments.length - 1;
 			let node = level.find((n) => n.name === name);

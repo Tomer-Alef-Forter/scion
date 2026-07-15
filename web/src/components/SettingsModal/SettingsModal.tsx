@@ -86,6 +86,8 @@ export function SettingsModal({
 	}
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop — click-outside is a mouse convenience; Escape-to-close is handled by the modal's own keydown listener
+		// biome-ignore lint/a11y/useKeyWithClickEvents: as above — Escape closes the modal; the backdrop click is mouse-only
 		<div
 			className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
 			onClick={(e) => {
@@ -98,7 +100,7 @@ export function SettingsModal({
 					Defaults for new workspaces. Existing workspaces keep whatever they were created with.
 				</p>
 				<form onSubmit={handleSubmit}>
-					<label className="mb-1 block text-xs font-medium text-muted-foreground">Agent</label>
+					<span className="mb-1 block text-xs font-medium text-muted-foreground">Agent</span>
 					<select
 						value={defaultAgent}
 						onChange={(e) => setDefaultAgent(e.target.value as AgentType)}
@@ -120,9 +122,7 @@ export function SettingsModal({
 						</p>
 					)}
 
-					<label className="mt-3 mb-1 block text-xs font-medium text-muted-foreground">
-						Editor
-					</label>
+					<span className="mt-3 mb-1 block text-xs font-medium text-muted-foreground">Editor</span>
 					<select
 						value={defaultEditor}
 						onChange={(e) => setDefaultEditor(e.target.value as EditorType)}
@@ -136,9 +136,9 @@ export function SettingsModal({
 					</select>
 
 					<div className="mt-4 border-t border-border pt-3">
-						<label className="mb-1 block text-xs font-medium text-muted-foreground">
+						<span className="mb-1 block text-xs font-medium text-muted-foreground">
 							Disk cleanup
-						</label>
+						</span>
 						<div className="flex items-center justify-between gap-2">
 							<p className="text-xs text-muted-foreground">
 								{orphanCount === null
@@ -159,9 +159,9 @@ export function SettingsModal({
 					</div>
 
 					<div className="mt-4 border-t border-border pt-3">
-						<label className="mb-1 block text-xs font-medium text-muted-foreground">
+						<span className="mb-1 block text-xs font-medium text-muted-foreground">
 							Agent daemon
-						</label>
+						</span>
 						<div className="flex items-center justify-between gap-2">
 							<p className="text-xs text-muted-foreground">
 								{liveSessionCount === null
@@ -182,9 +182,9 @@ export function SettingsModal({
 					</div>
 
 					<div className="mt-4 border-t border-border pt-3">
-						<label className="mb-1 block text-xs font-medium text-muted-foreground">
+						<span className="mb-1 block text-xs font-medium text-muted-foreground">
 							Notifications
-						</label>
+						</span>
 						<div className="flex items-center justify-between gap-2">
 							<p className="text-xs text-muted-foreground">
 								{permissionState === "denied"

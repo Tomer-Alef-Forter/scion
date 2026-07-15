@@ -80,10 +80,11 @@ export function ProjectSidebar({
 									onSubmit={(e) => handleSaveSetupCommand(e, p.id)}
 									className="flex flex-col gap-1.5 rounded-md border border-sidebar-border p-2"
 								>
-									<label className="text-xs font-medium text-muted-foreground">
+									<span className="text-xs font-medium text-muted-foreground">
 										Setup command for {p.name}
-									</label>
+									</span>
 									<input
+										// biome-ignore lint/a11y/noAutofocus: modal/field opens specifically for immediate text entry; autofocus is the intended UX
 										autoFocus
 										value={setupCommandInput}
 										onChange={(e) => setSetupCommandInput(e.target.value)}
@@ -167,6 +168,7 @@ export function ProjectSidebar({
 				{adding ? (
 					<form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
 						<input
+							// biome-ignore lint/a11y/noAutofocus: modal/field opens specifically for immediate text entry; autofocus is the intended UX
 							autoFocus
 							value={repoPathInput}
 							onChange={(e) => setRepoPathInput(e.target.value)}

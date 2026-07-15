@@ -72,6 +72,8 @@ export function NewWorkspaceModal({
 	}
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop — click-outside is a mouse convenience; Escape-to-close is handled by the modal's own keydown listener
+		// biome-ignore lint/a11y/useKeyWithClickEvents: as above — Escape closes the modal; the backdrop click is mouse-only
 		<div
 			className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
 			onClick={(e) => {
@@ -87,6 +89,7 @@ export function NewWorkspaceModal({
 				</p>
 				<form onSubmit={handleSubmit}>
 					<textarea
+						// biome-ignore lint/a11y/noAutofocus: modal/field opens specifically for immediate text entry; autofocus is the intended UX
 						autoFocus
 						rows={4}
 						value={prompt}

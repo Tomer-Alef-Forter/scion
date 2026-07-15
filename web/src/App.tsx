@@ -101,6 +101,7 @@ export function App() {
 	// changes and a new instance mounts.
 	const autoFocusTerminalRef = useRef(false);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: mount-only bootstrap — loads projects/settings and restores the last-opened workspace once; adding handleSelectWorkspace would re-run it on every render.
 	useEffect(() => {
 		api
 			.listProjects()
@@ -227,6 +228,7 @@ export function App() {
 	const lastKnownStatusRef = useRef<Map<string, AgentStatus>>(new Map());
 	const attentionWorkspaceIdsRef = useRef<Set<string>>(new Set());
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: subscribes to /ws/events once; selectProject is invoked lazily inside the async notification callback, not at subscribe time, so it isn't a subscribe input.
 	useEffect(() => {
 		function updateTabTitle() {
 			const n = attentionWorkspaceIdsRef.current.size;

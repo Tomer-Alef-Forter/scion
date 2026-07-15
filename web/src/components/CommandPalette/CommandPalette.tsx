@@ -28,6 +28,7 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
 		[commands, query],
 	);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: query is an intentional trigger — reset the highlighted index whenever the search text changes, even though it isn't read in the body.
 	useEffect(() => {
 		setActiveIndex(0);
 	}, [query]);
@@ -65,6 +66,8 @@ export function CommandPalette({ commands, onClose }: CommandPaletteProps) {
 	}
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: modal backdrop — click-outside is a mouse convenience; Escape-to-close is handled by the modal's own keydown listener
+		// biome-ignore lint/a11y/useKeyWithClickEvents: as above — Escape closes the modal; the backdrop click is mouse-only
 		<div
 			className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[15vh]"
 			onClick={(e) => {

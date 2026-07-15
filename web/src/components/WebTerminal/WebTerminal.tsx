@@ -77,6 +77,7 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 		[],
 	);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed only on workspaceId/terminalId (see the note at the deps array) — autoFocus is read once at mount; re-running would tear down and reconnect the PTY when a later render's autoFocus changes.
 	useEffect(() => {
 		const container = containerRef.current;
 		if (!container) return;
@@ -254,7 +255,6 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 		// workspaceId), not treated as a live/reactive prop — it must never
 		// re-run this whole effect (tearing down and reconnecting the PTY
 		// session) just because a later render's autoFocus value changed.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [workspaceId, terminalId]);
 
 	return (
