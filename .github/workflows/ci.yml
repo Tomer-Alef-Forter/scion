@@ -26,11 +26,15 @@ jobs:
           node-version: "20"
       - uses: oven-sh/setup-bun@v2
 
+      # --legacy-peer-deps reproduces Bun's (the dev install tool's) resolution:
+      # web pins @xterm/xterm@6.1.0-beta.220 while @xterm/addon-webgl peer-wants
+      # beta.221. Bun installs it and the app works; npm would otherwise refuse.
+      # TODO: align the @xterm/* beta versions in web/package.json and drop this.
       - name: Install dependencies (root)
-        run: npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund --legacy-peer-deps
 
       - name: Install dependencies (web)
-        run: npm install --no-audit --no-fund
+        run: npm install --no-audit --no-fund --legacy-peer-deps
         working-directory: web
 
       - name: Lint + format check (Biome)
