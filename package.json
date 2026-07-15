@@ -1,13 +1,18 @@
 {
   "name": "scion",
   "version": "0.1.0",
+  "description": "A tiny, standalone tool for orchestrating Claude Code agents across isolated git worktrees — terminal UI + web UI over one engine.",
   "license": "MIT",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "scion": "./src/index.tsx"
   },
   "scripts": {
+    "doctor": "tsx scripts/doctor.ts",
     "start": "tsx src/index.tsx",
     "server": "tsx src/server/index.ts",
     "supervisor": "tsx src/daemon/supervisor.ts",

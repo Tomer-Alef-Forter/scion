@@ -16,7 +16,7 @@ MIT licensed — see [LICENSE](LICENSE).
 
 ## Requirements
 
-- **Node 18+** (runtime; the app runs under Node via `tsx`)
+- **Node 20+** (runtime; the app runs under Node via `tsx`)
 - A package manager to install deps — `bun`, `npm`, or `pnpm`
 - `git`, `gh`
 - The `claude` CLI, already logged in
@@ -30,7 +30,14 @@ MIT licensed — see [LICENSE](LICENSE).
 ```bash
 bun install           # or: npm install
 bun run db:generate   # once, to produce the SQLite migrations
+bun run doctor        # preflight: checks Node/git/gh/claude + native bindings
 ```
+
+> **`bun run doctor` first.** It catches the most common setup problem up
+> front: if you installed deps with Bun but run under Node, the
+> `better-sqlite3` native binding is built for the wrong runtime and the app
+> fails at startup. The one-line fix is `npm rebuild better-sqlite3` — doctor
+> tells you exactly this if it detects the mismatch.
 
 Then pick a front end:
 
