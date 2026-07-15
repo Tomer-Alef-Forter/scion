@@ -62,7 +62,12 @@ const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
 			const cleanPrompt = prompt ? sanitizePrompt(prompt).trim() : "";
 			const resumeArgs = resumeSessionId ? ["--resume", resumeSessionId] : [];
 			const base = ["--permission-mode", "auto", ...resumeArgs];
-			return cleanPrompt ? [...base, cleanPrompt] : base;
+			// `--` (end-of-options) so a prompt that happens to start with `-`
+			// can't be parsed as a CLI flag — the prompt is data, not options.
+			// claude's commander parser honors this; the other bare-positional
+			// agents (codex/cursor-agent/droid) would likely accept `--` too, but
+			// they're unverified against a live install so we don't assume it there.
+			return cleanPrompt ? [...base, "--", cleanPrompt] : base;
 		},
 	},
 	// Gemini CLI (google-gemini/gemini-cli): `--approval-mode=yolo` auto-approves

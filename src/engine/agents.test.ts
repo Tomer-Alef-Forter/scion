@@ -25,20 +25,31 @@ describe("buildAgentArgv: claude", () => {
 		expect(buildAgentArgv("claude", {})).toEqual(["--permission-mode", "auto"]);
 	});
 
-	it("appends the sanitized, trimmed prompt as a trailing positional", () => {
+	it("appends the sanitized, trimmed prompt after a -- end-of-options separator", () => {
 		expect(buildAgentArgv("claude", { prompt: "  fix the bug  " })).toEqual([
 			"--permission-mode",
 			"auto",
+			"--",
 			"fix the bug",
 		]);
 	});
 
-	it("inserts --resume before the prompt when resuming a session", () => {
+	it("treats a prompt starting with a dash as data, not a flag (after --)", () => {
+		expect(buildAgentArgv("claude", { prompt: "--help me" })).toEqual([
+			"--permission-mode",
+			"auto",
+			"--",
+			"--help me",
+		]);
+	});
+
+	it("inserts --resume before the -- prompt separator when resuming a session", () => {
 		expect(buildAgentArgv("claude", { prompt: "continue", resumeSessionId: "sess-123" })).toEqual([
 			"--permission-mode",
 			"auto",
 			"--resume",
 			"sess-123",
+			"--",
 			"continue",
 		]);
 	});
@@ -142,6 +153,7 @@ describe("buildAgentArgv: prompt sanitization end-to-end", () => {
 		expect(buildAgentArgv("claude", { prompt: "[1m  hi there  [0m" })).toEqual([
 			"--permission-mode",
 			"auto",
+			"--",
 			"hi there",
 		]);
 	});

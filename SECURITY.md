@@ -60,3 +60,20 @@ Token/usage accounting is read from your own `~/.claude` transcripts; the cost
 figure shown in the UI is a local estimate. Scion does not send your code,
 prompts, or usage to any external service beyond the agents' own CLIs and, when
 you ask for it, `gh` (GitHub) for PR operations.
+
+### Known, by-design local trust assumptions
+
+These are intentional and low-risk for the local/loopback model, but worth
+knowing:
+
+- **The daemon's Unix socket** is created owner-only (`0600`) — its control
+  protocol can spawn processes, so it must not be reachable by other local
+  users. (Do not loosen this.)
+- **The hook receiver** (`127.0.0.1:48791`, always loopback even in LAN mode)
+  is unauthenticated. A local process that guesses a live terminal's random id
+  could inject fake *status* events — it cannot run code or read data. Same-
+  machine trust only.
+- **The web auth token** is passed in the WebSocket URL query string (browsers
+  can't set handshake headers). It's stripped from the address bar on load and
+  traffic is loopback/same-origin, but it would appear in the access logs of
+  any proxy you deliberately place in front of Scion.

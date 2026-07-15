@@ -7,6 +7,7 @@
 // directly by a PtyBackend (in practice always inProcessPtyBackend — this
 // process is the one that owns real node-pty sessions), so this file has no
 // pty.ts import of its own.
+import { chmodSync } from "node:fs";
 import * as net from "node:net";
 import type { AttachHandle, PtyBackend } from "../engine/ptyBackend.ts";
 import type { StatusStore } from "../engine/status.ts";
@@ -181,6 +182,17 @@ export function startSocketServer(
 		server.once("error", reject);
 		server.listen(sockPath, () => {
 			server.off("error", reject);
+			// Owner-only (0600). The control protocol accepts a `spawn` RPC that
+			// runs arbitrary commands, so the socket is a code-execution surface;
+			// without this it inherits the process umask, and on Linux a socket in
+			// a world-/group-writable /tmp could let another local user connect and
+			// spawn processes as us. Don't rely on umask — lock it down explicitly.
+			try {
+				chmodSync(sockPath, 0o600);
+			} catch {
+				// Best-effort: on platforms where chmod of a socket is unsupported,
+				// the per-user tmpdir (macOS) is already the containment boundary.
+			}
 			resolve({ server, controlConnectionCount: () => controlConnections.size });
 		});
 	});

@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -75,5 +75,19 @@ describe("readWorktreeFile path-traversal guard", () => {
 
 	it("rejects a directory path (not a file)", async () => {
 		await expect(readWorktreeFile(worktreePath, "sub")).rejects.toThrow("Not a file");
+	});
+
+	it("rejects a symlink inside the worktree that points outside it", async () => {
+		// The string checks pass (no `..`, not absolute), but the target escapes
+		// the worktree — the realpath containment check must catch it.
+		await symlink(join(worktreePath, "..", "secret-sibling.txt"), join(worktreePath, "escape"));
+		await expect(readWorktreeFile(worktreePath, "escape")).rejects.toThrow(
+			"Path traversal is not allowed",
+		);
+	});
+
+	it("still reads a symlink that stays inside the worktree", async () => {
+		await symlink(join(worktreePath, "hello.txt"), join(worktreePath, "alias.txt"));
+		await expect(readWorktreeFile(worktreePath, "alias.txt")).resolves.toBe("hello world");
 	});
 });

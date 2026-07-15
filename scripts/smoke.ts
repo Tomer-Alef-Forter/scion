@@ -253,9 +253,9 @@ async function main() {
 			JSON.stringify(buildClaudeArgv({})) === JSON.stringify(["--permission-mode", "auto"]),
 		);
 		check(
-			"buildClaudeArgv: prompt only",
+			"buildClaudeArgv: prompt only (after -- separator)",
 			JSON.stringify(buildClaudeArgv({ prompt: "fix bug" })) ===
-				JSON.stringify(["--permission-mode", "auto", "fix bug"]),
+				JSON.stringify(["--permission-mode", "auto", "--", "fix bug"]),
 		);
 		check(
 			"buildClaudeArgv: resume only",
@@ -263,9 +263,9 @@ async function main() {
 				JSON.stringify(["--permission-mode", "auto", "--resume", "sess-123"]),
 		);
 		check(
-			"buildClaudeArgv: resume + prompt (resume flag precedes prompt)",
+			"buildClaudeArgv: resume + prompt (resume flag precedes -- prompt)",
 			JSON.stringify(buildClaudeArgv({ prompt: "fix bug", resumeSessionId: "sess-123" })) ===
-				JSON.stringify(["--permission-mode", "auto", "--resume", "sess-123", "fix bug"]),
+				JSON.stringify(["--permission-mode", "auto", "--resume", "sess-123", "--", "fix bug"]),
 		);
 
 		// ---- buildAgentArgv: gemini/codex flag handling (pure, no spawn) ----
