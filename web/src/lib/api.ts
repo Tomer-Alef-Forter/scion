@@ -28,6 +28,8 @@ export interface SessionUsage {
 	totalInputTokens: number;
 	totalOutputTokens: number;
 	totalCacheCreationTokens: number;
+	totalCacheCreation5mTokens: number;
+	totalCacheCreation1hTokens: number;
 	totalCacheReadTokens: number;
 	turnCount: number;
 	usageUpdatedAt: number | null;

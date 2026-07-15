@@ -5,7 +5,8 @@ import type { SessionUsage } from "./api";
 // the cost it produces is an ESTIMATE, always labelled "~$… est." in the UI,
 // never presented as an authoritative charge (Claude Code's real cost is not
 // exposed to Scion). Cache tokens are billed off the input rate: writes at
-// 1.25× (5-minute TTL, the Claude Code default), reads at 0.1×.
+// 1.25× for the default 5-minute TTL, 2× for the (pricier) 1-hour TTL; reads
+// at 0.1× regardless of which TTL tier wrote them.
 interface ModelRate {
 	/** USD per 1M input tokens. */
 	input: number;
@@ -13,7 +14,8 @@ interface ModelRate {
 	output: number;
 }
 
-const CACHE_WRITE_MULTIPLIER = 1.25;
+const CACHE_WRITE_5M_MULTIPLIER = 1.25;
+const CACHE_WRITE_1H_MULTIPLIER = 2.0;
 const CACHE_READ_MULTIPLIER = 0.1;
 
 // Sonnet 5 has promotional intro pricing ($2/$10 per MTok) through 2026-08-31,
@@ -46,7 +48,8 @@ export function estimateCostUsd(usage: SessionUsage, now: Date = new Date()): nu
 	const perMillion =
 		usage.totalInputTokens * input +
 		usage.totalOutputTokens * output +
-		usage.totalCacheCreationTokens * input * CACHE_WRITE_MULTIPLIER +
+		usage.totalCacheCreation5mTokens * input * CACHE_WRITE_5M_MULTIPLIER +
+		usage.totalCacheCreation1hTokens * input * CACHE_WRITE_1H_MULTIPLIER +
 		usage.totalCacheReadTokens * input * CACHE_READ_MULTIPLIER;
 	return perMillion / 1_000_000;
 }

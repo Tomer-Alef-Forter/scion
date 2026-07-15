@@ -103,6 +103,8 @@ export interface SessionUsage {
 	totalInputTokens: number;
 	totalOutputTokens: number;
 	totalCacheCreationTokens: number;
+	totalCacheCreation5mTokens: number;
+	totalCacheCreation1hTokens: number;
 	totalCacheReadTokens: number;
 	turnCount: number;
 	usageUpdatedAt: number | null;
@@ -170,6 +172,8 @@ export function createStatusStore(db: Db): StatusStore {
 					totalInputTokens: usage.inputTokens,
 					totalOutputTokens: usage.outputTokens,
 					totalCacheCreationTokens: usage.cacheCreationTokens,
+					totalCacheCreation5mTokens: usage.cacheCreation5mTokens,
+					totalCacheCreation1hTokens: usage.cacheCreation1hTokens,
 					totalCacheReadTokens: usage.cacheReadTokens,
 					turnCount: usage.turnCount,
 					usageUpdatedAt: now,
@@ -255,6 +259,8 @@ export function createStatusStore(db: Db): StatusStore {
 						totalInputTokens: row.totalInputTokens,
 						totalOutputTokens: row.totalOutputTokens,
 						totalCacheCreationTokens: row.totalCacheCreationTokens,
+						totalCacheCreation5mTokens: row.totalCacheCreation5mTokens,
+						totalCacheCreation1hTokens: row.totalCacheCreation1hTokens,
 						totalCacheReadTokens: row.totalCacheReadTokens,
 						turnCount: row.turnCount,
 						usageUpdatedAt: row.usageUpdatedAt,
