@@ -857,10 +857,18 @@ export function App() {
 							</>
 						) : (
 							<div className="flex h-full flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-								<span>Select a workspace, or create a new one.</span>
+								<span>
+									{workspaces.length === 0
+										? "No workspaces yet — create your first one to launch an agent."
+										: "Select a workspace, or create a new one."}
+								</span>
 								<span className="text-xs">
-									<kbd className="rounded border border-border px-1">↑↓</kbd> navigate ·{" "}
 									<kbd className="rounded border border-border px-1">n</kbd> new ·{" "}
+									{workspaces.length > 0 && (
+										<>
+											<kbd className="rounded border border-border px-1">↑↓</kbd> navigate ·{" "}
+										</>
+									)}
 									<kbd className="rounded border border-border px-1">⌘K</kbd>/
 									<kbd className="rounded border border-border px-1">Ctrl+K</kbd> commands
 								</span>
@@ -868,13 +876,22 @@ export function App() {
 						)}
 					</div>
 				</>
+			) : projects.length === 0 ? (
+				<div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
+					<h1 className="text-lg font-semibold text-foreground">Welcome to Scion</h1>
+					<p className="max-w-sm text-sm text-muted-foreground">
+						Run Claude Code agents across isolated git worktrees — each workspace is its own branch,
+						so agents work in parallel without stepping on each other.
+					</p>
+					<p className="max-w-sm text-sm text-muted-foreground">
+						Get started by adding a project: click{" "}
+						<span className="font-medium text-foreground">+ Add project</span> in the sidebar and
+						point it at a local git repo.
+					</p>
+				</div>
 			) : (
 				<div className="flex flex-1 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-					<span>
-						{projects.length === 0
-							? "Add a project on the left to get started."
-							: "Select a project."}
-					</span>
+					<span>Select a project.</span>
 				</div>
 			)}
 
