@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel in-progress runs for the same ref when a new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Scion runs under Node (node-pty + better-sqlite3 native bindings don't
+      # load under Bun), but we install with Bun to match the committed
+      # lockfiles. See the "Why Node and not Bun" note in the README.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies (root)
+        run: bun install --frozen-lockfile
+
+      - name: Install dependencies (web)
+        run: bun install --frozen-lockfile
+        working-directory: web
+
+      # Rebuild native modules against the Node ABI — Bun may have built them
+      # for its own runtime. This is the CI equivalent of `bun run doctor`'s
+      # native-binding check.
+      - name: Rebuild native modules for Node
+        run: npm rebuild better-sqlite3 node-pty
+
+      - name: Preflight (doctor)
+        run: bun run doctor
+
+      - name: Typecheck (root)
+        run: bun run typecheck
+
+      - name: Typecheck (web)
+        run: bunx tsc --noEmit
+        working-directory: web
+
+      - name: Unit tests (root + web)
+        run: bun run test
+
+      - name: Build web
+        run: bun run --cwd web build
+
+      # Fail if schema.ts drifted from the committed migrations — a schema edit
+      # must ship with its generated migration.
+      - name: Migration drift check
+        run: |
+          bun run db:generate
+          if ! git diff --exit-code drizzle/; then
+            echo "::error::schema.ts changed without a committed migration. Run 'bun run db:generate' and commit the result."
+            exit 1
+          fi
+
+      # Integration smoke suites (real fs + PTYs, isolated $HOME). web-smoke is
+      # omitted: it needs a global WebSocket, which Node 20 lacks.
+      - name: Smoke tests
+        run: |
+          bun run smoke
+          bun run daemon-smoke
+          bun run persistence-smoke
