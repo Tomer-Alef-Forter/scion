@@ -1,6 +1,6 @@
 {
   "name": "scion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A tiny, standalone tool for orchestrating Claude Code agents across isolated git worktrees — terminal UI + web UI over one engine.",
   "license": "MIT",
   "private": true,
