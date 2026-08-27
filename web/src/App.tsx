@@ -24,7 +24,7 @@ import {
 	type WorkspaceWithStatus,
 } from "./lib/api";
 import { subscribeToStatusEvents } from "./lib/eventsSocket";
-import { isTypingTarget } from "./lib/keyboardShortcuts";
+import { type AppChord, isTypingTarget, matchAppChord } from "./lib/keyboardShortcuts";
 import { notifyAgentAttention } from "./lib/notifications";
 import { cn } from "./lib/utils";
 
@@ -527,6 +527,12 @@ export function App() {
 	const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
 	const selectedWorkspace = workspaces.find((w) => w.id === selectedWorkspaceId) ?? null;
 
+	// Single entry point for app-global chords, so the document-level listener
+	// and the terminal's custom key handler act on them identically.
+	const runAppChord = useCallback((chord: AppChord) => {
+		if (chord.type === "command-palette") setShowCommandPalette((v) => !v);
+	}, []);
+
 	// Every entry reuses an EXISTING handler — destructive ones (merge/delete)
 	// still route through requestMerge/requestDelete's confirm dialogs, never
 	// executing directly. Nothing here bypasses that safety.
@@ -566,6 +572,15 @@ export function App() {
 						label: `Create PR for "${selectedWorkspace.name}"`,
 						run: () => handleCreatePr(selectedWorkspace),
 					},
+					// Reachable from inside the terminal via ⌘K, so you can peek at
+					// the diff/files without detaching. `hint` shows the plain-key
+					// equivalent that works in list-nav mode.
+					...DETAIL_TABS.filter((tab) => tab.id !== activeTab).map((tab) => ({
+						id: `show-${tab.id}`,
+						label: `Show ${tab.label}`,
+						hint: String(DETAIL_TABS.findIndex((t) => t.id === tab.id) + 1),
+						run: () => setActiveTab(tab.id),
+					})),
 				]
 			: []),
 		...workspaces
@@ -606,15 +621,18 @@ export function App() {
 
 	useEffect(() => {
 		function onKeyDown(e: KeyboardEvent) {
-			if (isTypingTarget(e)) return;
-
-			// Cmd/Ctrl+K toggles the palette regardless of other overlays, so
-			// it can also close itself.
-			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+			// App-global chords (⌘/Ctrl+K) are checked BEFORE isTypingTarget so
+			// they fire even while typing in an input or over any overlay — that's
+			// what lets ⌘K also close the palette that has its own input focused.
+			// (When the terminal has focus, WebTerminal's key handler intercepts
+			// these first and this listener never sees them.)
+			const chord = matchAppChord(e);
+			if (chord) {
 				e.preventDefault();
-				setShowCommandPalette((v) => !v);
+				runAppChord(chord);
 				return;
 			}
+			if (isTypingTarget(e)) return;
 			if (anyOverlayOpen || showCommandPalette) return;
 
 			if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -829,6 +847,7 @@ export function App() {
 													workspaceId={openTerminal.workspaceId}
 													terminalId={openTerminal.terminalId}
 													autoFocus={autoFocusTerminalRef.current}
+													onAppChord={runAppChord}
 													onDetach={() =>
 														setActionMessage(
 															"Detached from terminal — arrow keys navigate the workspace list again.",

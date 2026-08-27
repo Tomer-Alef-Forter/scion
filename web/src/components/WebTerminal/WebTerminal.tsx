@@ -7,6 +7,7 @@ import type { ITheme } from "@xterm/xterm";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { type AppChord, matchAppChord } from "../../lib/keyboardShortcuts";
 import { createTerminalConnection, type TerminalConnection } from "../../lib/TerminalConnection";
 
 const TERMINAL_THEME: ITheme = {
@@ -48,6 +49,11 @@ interface WebTerminalProps {
 	 * already moves `document.activeElement` off it, which is all the app's
 	 * shortcut guard (`isTypingTarget`) needs to resume handling keys. */
 	onDetach?: () => void;
+	/** Fires when an app-global chord (⌘/Ctrl+K) is pressed while the terminal
+	 * has focus. The chord is swallowed (never sent to the PTY) and handled by
+	 * the app instead — this is how app actions "punch through" the terminal
+	 * without needing the Ctrl-B detach chord first. */
+	onAppChord?: (chord: AppChord) => void;
 	/** Focus the terminal right after it mounts — only when this mount was
 	 * triggered by an explicit "enter this workspace" action (Enter key /
 	 * click), never by keyboard preview-navigation between workspaces
@@ -58,7 +64,7 @@ interface WebTerminalProps {
 type ConnectionState = "connecting" | "open" | "reconnecting" | "error" | "exited";
 
 export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(function WebTerminal(
-	{ workspaceId, terminalId, onDetach, autoFocus },
+	{ workspaceId, terminalId, onDetach, onAppChord, autoFocus },
 	ref,
 ) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
@@ -66,6 +72,8 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 	const terminalRef = useRef<Terminal | null>(null);
 	const onDetachRef = useRef(onDetach);
 	onDetachRef.current = onDetach;
+	const onAppChordRef = useRef(onAppChord);
+	onAppChordRef.current = onAppChord;
 	const [state, setState] = useState<ConnectionState>("connecting");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -129,6 +137,21 @@ export const WebTerminal = forwardRef<WebTerminalHandle, WebTerminalProps>(funct
 		let detachArmed = false;
 		terminal.attachCustomKeyEventHandler((e) => {
 			if (e.type !== "keydown") return true;
+
+			// App-global chords (⌘/Ctrl+K) punch through the terminal: swallow
+			// them so they never reach the PTY, and hand them to the app. Checked
+			// first so it wins even mid-detach-chord. stopPropagation keeps the
+			// document-level listener from ALSO handling the same event (xterm
+			// does not stop propagation when a custom handler returns false).
+			const chord = matchAppChord(e);
+			if (chord) {
+				detachArmed = false;
+				e.preventDefault();
+				e.stopPropagation();
+				onAppChordRef.current?.(chord);
+				return false;
+			}
+
 			const noOtherModifiers = !e.shiftKey && !e.altKey && !e.metaKey;
 			if (!detachArmed && e.ctrlKey && noOtherModifiers && e.key.toLowerCase() === "b") {
 				detachArmed = true;
